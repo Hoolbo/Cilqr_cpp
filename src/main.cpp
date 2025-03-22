@@ -69,7 +69,7 @@ int main(){
         }
         std::cout<<cur_state<<std::endl;
         // if(i%3==0){
-            my_plot(global_plan_log,ego_log,solution);
+            my_plot(global_plan_log,ego_log,obs_trj,solution);
         // }
  
     }

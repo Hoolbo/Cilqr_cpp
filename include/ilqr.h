@@ -12,7 +12,7 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 50; //Horizen
+        int N = 40; //Horizen
         double tol = 1e-3;
         double rel_tol = 1e-3;
         int max_iter = 10;
@@ -47,12 +47,12 @@
         //障碍约束
         double obs_q1 = 1;
         double obs_q2 = 1;
-        double obs_rad = 1;
+        double obs_rad = 2;
         //QR矩阵
         Matrix4d Q;
         Matrix2d R;
         //横向偏移代价
-        double ref_weight = 2;
+        double ref_weight = 1;
         Arg() { // 在构造函数中初始化矩阵
             Q << 0.2, 0, 0, 0,
                  0, 0.2, 0, 0,

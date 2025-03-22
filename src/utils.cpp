@@ -70,19 +70,20 @@ std::vector<std::vector<double>> load_map(){
 
 void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     const std::vector<std::vector<double>>& ego_log,
+    const Trajectory& obs_traj,
     const Solution& solution) 
 {       
         namespace plt = matplotlibcpp;
         // 使用智能指针避免静态变量初始化问题
-        static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot, 
+        static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot,obs_traj_plot, 
                                         trajectory_plot,vehicle_rect_plot;
         
         static bool figure_initialized = false;
         constexpr double VEHICLE_LENGTH = 2.7;  // 车长（单位：米）
         constexpr double VEHICLE_WIDTH = 2;   // 车宽
         // 动态视图参数
-        constexpr double FOLLOW_FACTOR = 0.5;
-        constexpr double BASE_MARGIN = 100.0;
+        constexpr double FOLLOW_FACTOR = 0.7;
+        constexpr double BASE_MARGIN = 20.0;
         static std::pair<double, double> view_center = {0, 0};
 
         // 首次初始化图形窗口
@@ -124,10 +125,43 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
                 "trajectory_plot",
                 trajectory[0],
                 trajectory[1],
-                "b-"
+                "g-"
             ));
         }
         trajectory_plot->update(trajectory[0],trajectory[1]);
+
+        double obs_x = obs_traj.states[0][0];
+        double obs_y = obs_traj.states[0][1];
+        double obs_theta = obs_traj.states[0][2]; 
+        std::vector<double> obs_rect_x, obs_rect_y;
+        double obs_cos_theta = cos(obs_theta);
+        double obs_sin_theta = sin(obs_theta);
+        double obs_radius = 1.0;
+        std::array<std::pair<double, double>, 4> obs_local_points = {
+            std::make_pair( obs_radius,  obs_radius),  // 前右
+            std::make_pair( obs_radius, -obs_radius),  // 后右
+            std::make_pair(-obs_radius, -obs_radius),  // 后左
+            std::make_pair(-obs_radius,  obs_radius)   // 前左
+        };
+        for (const auto& pt : obs_local_points) {
+            // 旋转和平移变换
+            double global_x = obs_x + pt.first * obs_cos_theta - pt.second *  obs_sin_theta;
+            double global_y = obs_y + pt.first *  obs_sin_theta + pt.second * obs_cos_theta;
+            obs_rect_x.push_back(global_x);
+            obs_rect_y.push_back(global_y);
+        }
+        obs_rect_x.push_back(obs_rect_x.front());
+        obs_rect_y.push_back(obs_rect_y.front());
+        // 更新或创建绘图对象
+        if (!obs_traj_plot) {
+            obs_traj_plot.reset(new matplotlibcpp::Plot(
+                " ",
+                obs_rect_x, 
+                obs_rect_y, 
+                "c-"
+            ));
+        }
+        obs_traj_plot->update(obs_rect_x, obs_rect_y);
 
         // 更新车辆矩形
         double x = ego_log[0].back();
@@ -181,8 +215,8 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         // 非阻塞式刷新（关键参数）
         // plt::backend("TkAgg");  // 使用更快的后端
         // plt::ion();             // 启用交互模式
-        plt::xlim(view_center.first - 20, view_center.first + 20);
-        plt::ylim(view_center.second - 20, view_center.second + 20);
+        plt::xlim(view_center.first - margin, view_center.first + margin);
+        plt::ylim(view_center.second - margin, view_center.second + margin);
         plt::grid(true);
         matplotlibcpp::pause(0.02);  // 控制刷新频率
         matplotlibcpp::draw();        // 强制立即绘制
