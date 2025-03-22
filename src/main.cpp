@@ -39,7 +39,7 @@ int main(){
     //障碍物初始化
     Trajectory obs_trj;
     for(int i=0;i<arg.N+1;i++){
-        obs_trj.push_back(State(300,2,0,0));
+        obs_trj.push_back(State(300,3,0,0));
     }
 
     //求解器初始化

@@ -12,7 +12,7 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 40; //Horizen
+        int N = 50; //Horizen
         double tol = 1e-3;
         double rel_tol = 1e-3;
         int max_iter = 10;
@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 10;
+        double desire_speed = 5;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
@@ -40,14 +40,15 @@
         double steer_min_q1 = 1;
         double steer_min_q2 = 1;
         //道路约束
-        double trace_safe_width_left = 3;
-        double trace_safe_width_right = 3;
+        double trace_safe_width_left = 4;
+        double trace_safe_width_right = 4;
         double lane_q1 = 2;
         double lane_q2 = 2;
         //障碍约束
         double obs_q1 = 1;
-        double obs_q2 = 1;
-        double obs_rad = 2;
+        double obs_q2 = 2;
+        double buff = 1;
+        double obs_rad = 1 + buff;
         //QR矩阵
         Matrix4d Q;
         Matrix2d R;
@@ -57,7 +58,7 @@
             Q << 0.2, 0, 0, 0,
                  0, 0.2, 0, 0,
                  0, 0, 0, 0,
-                 0, 0, 0, 0.5;
+                 0, 0, 0, 2;
 
             R <<    1,     0,
                     0,    1000;
@@ -126,11 +127,11 @@
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 4;
+            double ego_rad = 2;
             double lf      = 1.597;
             double lr      =  1.133;
             double len       =  2.73;
-            double width   =  1.5;
+            double width   =  2;
             double dt = 0.1;
             size_t N = 50;
             SystemModel() = default;

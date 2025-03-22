@@ -136,7 +136,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         std::vector<double> obs_rect_x, obs_rect_y;
         double obs_cos_theta = cos(obs_theta);
         double obs_sin_theta = sin(obs_theta);
-        double obs_radius = 1.0;
+        double obs_radius = 1;
         std::array<std::pair<double, double>, 4> obs_local_points = {
             std::make_pair( obs_radius,  obs_radius),  // 前右
             std::make_pair( obs_radius, -obs_radius),  // 后右
