@@ -123,13 +123,37 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
         // Solution old_solution = current_solution;
 
         // 反向传播计算控制修正量
+        clock_t start = clock();
         compute_df(current_solution);
+        clock_t end = clock();
+        double cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+        // std::cout << "compute_df time used: " << cpu_time_used * 1000 << " ms\n";
+        start = clock();
+
         compute_cost_derivatives(current_solution);
+        end = clock();
+        cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+        // std::cout << "compute_cost_derivatives time used: " << cpu_time_used * 1000 << " ms\n";
+        start = clock();
+
         backward();
+        end = clock();
+        cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+        // std::cout << "backward time used: " << cpu_time_used * 1000  << " ms\n";
+        start = clock();
 
         // 正向传播尝试新解并计算新代价
         new_solution = forward(current_solution);
+        end = clock();
+        cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+        // std::cout << "forward time used: " << cpu_time_used * 1000 << " ms\n";
+        start = clock();
+
         double J_new = cal_cost(new_solution);
+        end = clock();
+        cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+        // std::cout << "cal_cost time used: " << cpu_time_used * 1000 << " ms\n";
+        start = clock();
 
         // 计算相对改进量
         double rel_improve = (J_old - J_new) / J_old;
@@ -247,6 +271,19 @@ double CILQRSolver::cal_cost(const Solution& solution){
     double J_state_total= 0;
     double J_ctrl_total = 0;
     double J_constraint_total = 0;
+    double l;
+    double c_left;
+    double cost_lane_left;
+    double c_right;
+    double cost_lane_right;
+    double dx;
+    double dy;
+    double dist;
+    double safe_distance;
+    double c;
+    double cost_max_steer;
+    double cost_min_steer;
+
     //计算状态代价
     for(int i=0;i<arg.N+1;i++){
 
@@ -266,12 +303,12 @@ double CILQRSolver::cal_cost(const Solution& solution){
         //计算超越车道边界代价  
         if(arg.if_cal_lane_cost){
             //左侧超越车道边界代价
-            double l = dX.transpose() * nor_r;
-            double c_left = l - arg.trace_safe_width_left;
-            double cost_lane_left = arg.lane_q1*exp(arg.lane_q2*c_left);
+            l = dX.transpose() * nor_r;
+            c_left = l - arg.trace_safe_width_left;
+            cost_lane_left = arg.lane_q1*exp(arg.lane_q2*c_left);
             //右侧超越车道边界代价
-            double c_right = -l - arg.trace_safe_width_right;
-            double cost_lane_right = arg.lane_q1*exp(arg.lane_q2*c_right);
+            c_right = -l - arg.trace_safe_width_right;
+            cost_lane_right = arg.lane_q1*exp(arg.lane_q2*c_right);
             cost_lane = cost_lane_left + cost_lane_right;
         }
         //计算障碍物代价
@@ -282,14 +319,14 @@ double CILQRSolver::cal_cost(const Solution& solution){
                 break;
             }
             State obs_state = obs.get_states()[i];
-            double dx = X[0] - obs_state[0];  // Ego车与障碍物的x坐标差
-            double dy = X[1] - obs_state[1];  // Ego车与障碍物的y坐标差
-            double dist = sqrt(dx * dx + dy * dy);       // 计算距离
+            dx = X[0] - obs_state[0];  // Ego车与障碍物的x坐标差
+            dy = X[1] - obs_state[1];  // Ego车与障碍物的y坐标差
+            dist = sqrt(dx * dx + dy * dy);       // 计算距离
             
             //障碍物代价计算：若距离小于安全阈值，产生代价
-            double safe_distance = arg.obs_rad + ego.get_model().ego_rad; // 安全距离
+            safe_distance = arg.obs_rad + ego.get_model().ego_rad; // 安全距离
             //c小于0满足约束  c大于0违反约束
-            double c = safe_distance - dist;   
+            c = safe_distance - dist;   
             //返回代价
             cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
         } 
@@ -303,10 +340,10 @@ double CILQRSolver::cal_cost(const Solution& solution){
         double cost_ctrl = U.transpose() * arg.R * U;
         //计算前轮转角约束代价
         if(arg.if_cal_steer_cost){
-            double c = U.transpose() * P2 - arg.steer_angle_max;
-            double cost_max_steer = arg.steer_max_q1*exp(arg.steer_max_q2*c);
+            c = U.transpose() * P2 - arg.steer_angle_max;
+            cost_max_steer = arg.steer_max_q1*exp(arg.steer_max_q2*c);
             c = arg.steer_angle_min -  U.transpose() * P2 ;
-            double cost_min_steer = arg.steer_min_q1*exp(arg.steer_min_q2*c);
+            cost_min_steer = arg.steer_min_q1*exp(arg.steer_min_q2*c);
             cost_steer = cost_max_steer + cost_min_steer;
         }else{
             cost_steer = 0;
@@ -333,34 +370,52 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
     const auto& local_plan = ego.get_local_plan().get_points();
     const auto& obs_traj = obs.get_states();
     const int N = arg.N;
-
+    State X;
+    State X_r;
+    State X_e;
+    size_t index;
+    size_t match_index;
+    Vector4d l_dx;
+    Matrix4d l_ddx;
+    Vector4d l_dx_ref;
+    Matrix4d l_ddx_ref;
+    Vector2d dX;
     // 初始化导数矩阵
-
+    Vector2d nor_r;
     Vector2d P2(0, 1); // 转向控制投影向量
+    Vector4d db_obs = Vector4d::Zero();
+    Matrix4d ddb_obs = Matrix4d::Zero();
+    Vector2d lu_base;
+    Matrix2d luu_base;
+
+    // 转向约束导数
+    Vector2d db_steer;
+    Matrix2d ddb_steer;
+    Vector2d u;
 
     // 第一部分：状态相关导数
     for (int i = 0; i <= N; ++i) {
-        const State& X = X_traj[i];
+        X = X_traj[i];
         
         // 找到最近参考点
-        size_t index = find_closest_point(local_plan, X) ;
-        size_t match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
+        index = find_closest_point(local_plan, X) ;
+        match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
         // match_index = index;
         const Point& X_r_point = local_plan[match_index];
-        State X_r;
+        X_r;
         X_r << X_r_point.x, X_r_point.y, arg.desire_heading, arg.desire_speed;
 
         // 状态误差
-        State X_e = X - X_r;
+        X_e = X - X_r;
         // 基本状态代价导数
-        Vector4d l_dx = 2 * arg.Q * X_e;
-        Matrix4d l_ddx = 2 * arg.Q;
+        l_dx = 2 * arg.Q * X_e;
+        l_ddx = 2 * arg.Q;
 
         //计算横向偏移代价导数
-        Vector4d l_dx_ref;
-        Matrix4d l_ddx_ref;
-        Vector2d dX(X_e[0], X_e[1]);
-        Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+        l_dx_ref;
+        l_ddx_ref;
+        dX << X_e[0], X_e[1];
+        nor_r << -std::sin(X_r_point.heading), std::cos(X_r_point.heading);
         l_dx_ref << -2*dX.dot(nor_r)*sin(X_r_point.heading),
                      2*dX.dot(nor_r)*cos(X_r_point.heading),
                      0, 
@@ -373,8 +428,6 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
         l_ddx_ref = l_ddx_ref * arg.ref_weight;
 
         // 障碍物代价导数
-        Vector4d db_obs = Vector4d::Zero();
-        Matrix4d ddb_obs = Matrix4d::Zero();
         if (arg.if_cal_obs_cost && i < obs_traj.size()) {
             const State& obs_state = obs_traj[i];
             double dx = X[0] - obs_state[0];
@@ -428,15 +481,12 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
 
     // 第二部分：控制相关导数
     for (int i = 0; i < N; ++i) {
-        const Vector2d& u = U[i];
+        u = U[i];
         
         // 基本控制代价导数
-        Vector2d lu_base = 2 * arg.R * u;
-        Matrix2d luu_base = 2 * arg.R;
+        lu_base = 2 * arg.R * u;
+        luu_base = 2 * arg.R;
 
-        // 转向约束导数
-        Vector2d db_steer = Vector2d::Zero();
-        Matrix2d ddb_steer = Matrix2d::Zero();
         if (arg.if_cal_steer_cost) {
             // 最大转向约束
             double c_max = u.dot(P2) - arg.steer_angle_max;
@@ -470,34 +520,40 @@ void CILQRSolver::backward() {
     this->k = std::vector<MatrixXd>(N, Vector2d::Zero());
     this->K = std::vector<MatrixXd>(N, MatrixXd::Zero(2,4));
 
+    Matrix4d df_dx;
+    Matrix<double,4,2> df_du;
+    Vector4d Qx;
+    Matrix4d Qxx;
+    Matrix<double,2,4> Qux;
+    Vector2d singular_values;
+    Matrix2d U;
+    Matrix2d V;
+    Matrix2d Quu_inv;
     // 反向迭代
     for (int i = N-1; i >= 0; --i) { // 注意从N-1开始
         // 获取当前时刻的雅可比矩阵
-        const Matrix4d& df_dx = this->df_dx[i];
-        const Matrix<double,4,2>& df_du = this->df_du[i];
+        df_dx = this->df_dx[i];
+        df_du = this->df_du[i];
         
         // 计算Q函数相关量
-        Vector4d Qx = lx[i] + df_dx.transpose() * V_x;
+        Qx = lx[i] + df_dx.transpose() * V_x;
         Qu[i] = lu[i] + df_du.transpose() * V_x;
         
-        Matrix4d Qxx = lxx[i] + df_dx.transpose() * V_xx * df_dx;
-        Matrix<double,2,4> Qux = lux[i] + df_du.transpose() * V_xx * df_dx;
+        Qxx = lxx[i] + df_dx.transpose() * V_xx * df_dx;
+        Qux = lux[i] + df_du.transpose() * V_xx * df_dx;
         Quu[i] = luu[i] + df_du.transpose() * V_xx * df_du;
-
-
 
         // SVD分解求逆
         JacobiSVD<Matrix2d> svd(Quu[i], ComputeFullU | ComputeFullV);
-        Vector2d singular_values = svd.singularValues();
-        const Matrix2d& U = svd.matrixU();
-        const Matrix2d& V = svd.matrixV();
-        Matrix2d Quu_inv;
+        singular_values = svd.singularValues();
+        U = svd.matrixU();
+        V = svd.matrixV();
         // Quu_inv = (Quu[i] + lambda * Matrix2d::Identity()).inverse();
         // 正则化奇异值
         for(int j=0; j<2; ++j){
             // singular_values[j] = std::max(singular_values[j],1.0);
             // singular_values[j] = singular_values[j] * singular_values[j]/(singular_values[j] + lambda);
-            singular_values[j] = std::max(singular_values[j],1e-6) + lamb;
+            singular_values[j] = std::max(singular_values[j],1e-8) + lamb;
         }
         Quu_inv = V * singular_values.cwiseInverse().asDiagonal() * U.transpose();
 
@@ -514,7 +570,7 @@ void CILQRSolver::backward() {
 Solution CILQRSolver::forward(const Solution& cur_solution){
         
     // 初始化线搜索参数
-    const int max_iterations = 5;
+    const int max_iterations = 10;
     double alpha = 1;
     bool found = false;
     double J_old = cal_cost(cur_solution);
@@ -527,6 +583,7 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
     std::vector<Control> U_tmp;
     std::vector<State> X_tmp;
     Vector4d delta_x;
+
     for (int iter = 0; iter < max_iterations; ++iter) {
         // 临时存储新控制序列
         U_tmp = U;
