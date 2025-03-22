@@ -1,5 +1,6 @@
 #include "utils.h"
-#include "Eigen/Eigen"
+
+
 std::vector<std::vector<double>> load_map(){
 
     std::vector<std::vector<double>> map_info(3);
@@ -66,53 +67,124 @@ std::vector<std::vector<double>> load_map(){
         return map_info;
 }
 
-void my_plot(std::vector<double> global_x,std::vector<double> global_y,
-     std::vector<double> ego_x,std::vector<double> ego_y){
-        using namespace std;
-        using namespace matplot;
-        // backend()->interactive(true); // 启用交互模式
-        static figure_handle fig;
-        static line_handle global_path;
-        static line_handle ego_path;
-        if (!fig) {
-            fig = figure();
-            fig->ion();
-            // fig->backend()->is_interactive();
-            auto ax = fig->current_axes();
-            hold(on);
-            ax->xlim({-10, 900}); // 设置合理范围
-            ax->ylim({-50, 100});
-            global_path = plot(ax,global_x,global_y,"--b");
-            ego_path = plot(ax,ego_x,ego_y,"r");
-            // matplot::show();
-        }
-        else{
-            global_path->x_data(global_x);
-            global_path->y_data(global_y);
-            ego_path->x_data(ego_x);
-            ego_path->y_data(ego_y);
-            // fig->draw();
-        }
-}
 
-// #include <matplot/matplot.h>
-
-// void my_plot(std::vector<double> global_x, std::vector<double> global_y,
-//              std::vector<double> ego_x, std::vector<double> ego_y) {
-//     using namespace matplot;
-    
-//     // 静态变量保存figure和线条句柄
-//     static figure_handle fig;
-//     static matplot::line_handle lines;
-
-//     // 第一次调用初始化
-//         fig = figure();                 // 创建figure对象
-//         hold(on);                       // 启用图形保持
-//         auto ax = fig->current_axes();  // 获取当前坐标系
+void my_plot(const std::vector<std::vector<double>>& global_plan_log,
+    const std::vector<std::vector<double>>& ego_log,
+    const Solution& solution) 
+{       
+        namespace plt = matplotlibcpp;
+        // 使用智能指针避免静态变量初始化问题
+        static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot, 
+                                        trajectory_plot,vehicle_rect_plot;
         
-//         lines->x_data(global_x);
-//         lines->y_data(global_y);
-//         show();  // 首次显示窗口（非阻塞模式）
+        static bool figure_initialized = false;
+        constexpr double VEHICLE_LENGTH = 2.7;  // 车长（单位：米）
+        constexpr double VEHICLE_WIDTH = 2;   // 车宽
+        // 动态视图参数
+        constexpr double FOLLOW_FACTOR = 0.5;
+        constexpr double BASE_MARGIN = 100.0;
+        static std::pair<double, double> view_center = {0, 0};
 
-// }
+        // 首次初始化图形窗口
+        if (!figure_initialized) {
+            figure_initialized = true;
+            plt::figure();
+            plt::title("CILQR PLANNING");
+            plt::xlabel("X (m)");
+            plt::ylabel("Y (m)");
+            plt::grid(true);
+            
+            global_plot.reset(new matplotlibcpp::Plot(
+                "global_plot",
+                global_plan_log[0], 
+                global_plan_log[1],
+                "k-."
+            ));
+        }
 
+        
+        double target_x = ego_log[0].back();
+        double target_y = ego_log[1].back();
+        view_center.first += FOLLOW_FACTOR * (target_x - view_center.first);
+        view_center.second += FOLLOW_FACTOR * (target_y - view_center.second);
+        double speed = ego_log[3].back();
+        double margin = BASE_MARGIN + speed * 3;
+
+
+
+        std::vector<std::vector<double>> trajectory(4);
+        for(int i=0;i<solution.ego_trj.states.size();i++){
+            trajectory[0].push_back(solution.ego_trj.states[i][0]);
+            trajectory[1].push_back(solution.ego_trj.states[i][1]);
+        }
+
+        // 初始化并更新轨迹
+        if(!trajectory_plot){
+            trajectory_plot.reset(new matplotlibcpp::Plot(
+                "trajectory_plot",
+                trajectory[0],
+                trajectory[1],
+                "b-"
+            ));
+        }
+        trajectory_plot->update(trajectory[0],trajectory[1]);
+
+        // 更新车辆矩形
+        double x = ego_log[0].back();
+        double y = ego_log[1].back();
+        double theta = ego_log[2].back(); 
+        // 计算矩形四角相对坐标
+        const double half_len = VEHICLE_LENGTH / 2;
+        const double half_wid = VEHICLE_WIDTH / 2;
+        std::array<std::pair<double, double>, 4> local_points = {
+            std::make_pair( half_len,  half_wid),  // 前右
+            std::make_pair( half_len, -half_wid),  // 后右
+            std::make_pair(-half_len, -half_wid),  // 后左
+            std::make_pair(-half_len,  half_wid)   // 前左
+        };
+        // 坐标系变换
+        std::vector<double> rect_x, rect_y;
+        double cos_theta = cos(theta);
+        double sin_theta = sin(theta);
+        for (const auto& pt : local_points) {
+            // 旋转和平移变换
+            double global_x = x + pt.first * cos_theta - pt.second * sin_theta;
+            double global_y = y + pt.first * sin_theta + pt.second * cos_theta;
+            rect_x.push_back(global_x);
+            rect_y.push_back(global_y);
+        }
+        // 闭合矩形
+        rect_x.push_back(rect_x.front());
+        rect_y.push_back(rect_y.front());
+        // 更新或创建绘图对象
+        if (!vehicle_rect_plot) {
+            vehicle_rect_plot.reset(new matplotlibcpp::Plot(
+                " ",
+                rect_x, 
+                rect_y, 
+                "b-"
+            ));
+        }
+        vehicle_rect_plot->update(rect_x, rect_y);
+        
+        // 历史轨迹
+        if (!ego_plot){
+            ego_plot.reset(new matplotlibcpp::Plot(
+                "ego_plot",
+                ego_log[0],
+                ego_log[1],
+                "r-"
+            ));
+        } 
+        ego_plot->update(ego_log[0], ego_log[1]);
+
+        // 非阻塞式刷新（关键参数）
+        // plt::backend("TkAgg");  // 使用更快的后端
+        // plt::ion();             // 启用交互模式
+        plt::xlim(view_center.first - 20, view_center.first + 20);
+        plt::ylim(view_center.second - 20, view_center.second + 20);
+        plt::grid(true);
+        matplotlibcpp::pause(0.02);  // 控制刷新频率
+        matplotlibcpp::draw();        // 强制立即绘制
+            
+}

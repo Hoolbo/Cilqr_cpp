@@ -1,41 +1,45 @@
-    cmake_minimum_required(VERSION 3.10)
-    project(main)
+cmake_minimum_required(VERSION 3.15)  
+project(main)
 
-    set(CMAKE_CXX_STANDARD 17)
-# vcpkg
-    set(CMAKE_TOOLCHAIN_FILE "C:/Users/Hoolbo/Code/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake")
+set(CMAKE_CXX_STANDARD 17)
+add_compile_options(/utf-8)
 
-#头文件目录
-    include_directories(
-        include
-        "C:/Users/Hoolbo/Code/Tools/vcpkg/installed/x64-windows/include" #vcpkg头文件目录
-        "C:/Program Files/MATLAB/R2023b/extern/include" #matlab头文件目录
-    )
+find_package(Eigen3 REQUIRED)
+find_package(Python3 REQUIRED)
+find_package(Matlab REQUIRED)
+# find_package(Numpy REQUIRED)
+# find_package(matplotlibcpp REQUIRED)
 
-# 链接库目录
-    link_directories(
-        "C:/Program Files/MATLAB/R2023b/extern/lib/win64/microsoft"
-    )
-    find_package(Eigen3 REQUIRED)
-    find_package(Matplot++ CONFIG REQUIRED)  
-# 获取源文件列表
-    aux_source_directory(./src SRC_LIST)
+set(Eigen3_INCLUDE_DIRS "C:/Users/Hoolbo/Code/Tools/vcpkg/installed/x64-windows/include")
 
-# 测试用
-# add_executable(main test.cpp)  
+set(Python3_INCLUDE_DIRS "C:/Users/Hoolbo/AppData/Local/Programs/Python/Python36/include")
+set(PYTHON3_LIBRARY "C:/Users/Hoolbo/AppData/Local/Programs/Python/Python36/libs")
 
-# 创建可执行文件
-    add_executable(main ${SRC_LIST})
+set(Matlab_INCLUDE_DIRS "C:/Program Files/MATLAB/R2023b/extern/include")
+set(Matlab_LIBRARY "C:/Program Files/MATLAB/R2023b/extern/lib/win64/microsoft")
 
-# 正确链接目标库
-    target_link_libraries(main PRIVATE 
-        Eigen3::Eigen
-        Matplot++::cimg  
-        Matplot++::matplot  
-        libmat.dll
-        libmat.lib
-        libmx.lib
-        libmex.lib
-        libeng.lib
-        mclmcrrt.lib
-    )
+set(Numpy_INCLUDE_DIRS "C:/Users/Hoolbo/AppData/Local/Programs/Python/Python36/Lib/site-packages/numpy/core/include")
+set(Numpy_LIBRARY "C:/Users/Hoolbo/AppData/Local/Programs/Python/Python36/Lib/site-packages/numpy/core/lib")
+
+include_directories(
+    include
+    ${Eigen3_INCLUDE_DIRS}
+    ${Python3_INCLUDE_DIRS}
+    ${Matlab_INCLUDE_DIRS}
+    ${Numpy_INCLUDE_DIRS}
+)
+link_directories(
+    libs
+    ${PYTHON3_LIBRARY}
+    ${Matlab_LIBRARY}
+    ${Numpy_LIBRARY}
+)
+
+aux_source_directory(./src SRC_LIST)
+add_executable(main ${SRC_LIST})
+
+target_link_libraries(main PRIVATE 
+    mclmcrrt.lib
+    python36_d.lib
+    npymath.lib
+)

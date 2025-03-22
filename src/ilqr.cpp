@@ -1,4 +1,4 @@
-﻿#include <cmath>
+#include <cmath>
 #include <iostream>
 #include "ilqr.h"
 using namespace Eigen;
@@ -64,10 +64,10 @@ Matrix4d SystemModel::get_jacobian_state(const Vector4d& X, const Vector2d& U){
     double delta = U(1);
     double beta = atan((lr / (lr + lf)) * tan(delta));
     Matrix4d df_dx;
-    df_dx << 1, 0, -v*sin(phi+beta)*dt,cos(phi+beta)*dt,
-             0, 1,  v*cos(phi+beta)*dt,sin(phi+beta)*dt,
+    df_dx << 1, 0, -v*sin(phi+beta)*dt,  cos(phi+beta)*dt,
+             0, 1,  v*cos(phi+beta)*dt,  sin(phi+beta)*dt,
              0, 0,    1,  tan(delta)*cos(beta) * dt / len, 
-             0, 0,    0,                              1;
+             0, 0,    0,                                1;
     return df_dx;
 }
 Matrix<double,4,2> SystemModel::get_jacobian_control(const Vector4d& X, const Vector2d& U){
@@ -75,7 +75,7 @@ Matrix<double,4,2> SystemModel::get_jacobian_control(const Vector4d& X, const Ve
     double v = X(3);
     double delta = U(1);
     double beta = atan((lr / (lr + lf)) * tan(delta));
-    double k = lr / len; 
+    double k = lr / (lr + lf); 
     auto sec = [](double x) -> double { return 1 / cos(x); };
     double dbeta_ddelta = k * sec(delta) * sec(delta) / (1 + k*k*tan(delta)*tan(delta));
     Matrix<double,4,2> df_du;
@@ -107,17 +107,16 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
     Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
     if(local_last_point == global_last_point){
         arg.desire_speed = 0;
+        arg.desire_heading = 0;
+        arg.Q(2,2) = 0;
     }
-
 
     Solution current_solution = get_nominal_solution();
     Solution new_solution;
     double J_old = cal_cost(current_solution);
-    
-    // this->solution = current_solution;
-    lamb = arg.lamb_init; // 初始化正则化系数
-
-    bool converged = false;
+  
+    lamb = arg.lamb_init; // 如果上次求解未收敛则初始化正则化系数
+    converged = false;
     
     for (int iter = 0; iter < arg.max_iter; ++iter) {
         // // 备份当前解
@@ -127,53 +126,53 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
         compute_df(current_solution);
         compute_cost_derivatives(current_solution);
         backward();
+
         // 正向传播尝试新解并计算新代价
         new_solution = forward(current_solution);
         double J_new = cal_cost(new_solution);
 
         // 计算相对改进量
         double rel_improve = (J_old - J_new) / J_old;
-
-        if (J_new < J_old) {
+        if (J_new < J_old ) {
             // 动态调整正则化系数
             if (rel_improve > 0.1) { // 显著改进时降低λ
-                lamb = std::max(lamb / 2, 1e-6);
+                lamb = lamb / 1.5;
             } else {                 // 轻微改进时保守调整
-                lamb = std::min(lamb * 2, arg.lamb_max);
+                lamb = lamb * 2;
             }
             // 更新当前解
             current_solution = new_solution;
             J_old = J_new;
             // 收敛终止条件判断
             if (rel_improve < arg.rel_tol) {
+                //记录上一次解
                 pre_solution = current_solution;
-                std::cout << "已收敛:迭代：" << iter + 1 << "次" << std::endl;
+                std::cout << "Converged | iteration: " << iter + 1  << std::endl;
                 converged = true;
                 break;
             }
         } else { // 代价未下降时增加正则化
-            lamb = lamb * 3;
+            lamb = lamb * 2;
             // 失败终止条件判断
              if (lamb > arg.lamb_max) {
                 pre_solution = Solution();
-                std::cerr << "未收敛:lamb达到最大正则化系数 " << arg.lamb_max << std::endl;
+                std::cerr << "Unconverged | Maxmum lamb | iteration: "<< iter + 1 << std::endl;
                 break;
             }
         }
     }
-
+    
     if (!converged && lamb <= arg.lamb_max) {
         pre_solution = Solution();
-        std::cerr << "未收敛:达到最大迭代次数" << std::endl;
+        std::cerr << "Unconverged::Maxmum iteration" << std::endl;
     }
-    
     return current_solution;
 }
 //获取标称轨迹
 Solution CILQRSolver::get_nominal_solution(){
     // 添加长度预检查
     if (this->arg.N <= 0) 
-    throw std::invalid_argument("时间步长N必须大于0");
+    throw std::invalid_argument("N has to be greater than 0");
 
     Trajectory nominal_trj;
     ControlSequence nominal_ctrl_sequence;
@@ -206,18 +205,15 @@ Solution CILQRSolver::get_nominal_solution(){
         for (int i = 0; i < arg.N; ++i) {
             // 获取当前状态
             State X_cur = nominal_trj.back();
-            
             // 生成控制指令
             Control U = pure_pursuit(X_cur);
-            
             // 添加安全限制
             U[1] = std::clamp(U[1], 
                 -arg.steer_angle_max, 
                 arg.steer_angle_max);
-            
             // 前向模拟
+            // U << 0,0.001;
             State X_next = ego.get_model().dynamics(X_cur, U);
-            
             nominal_ctrl_sequence.push_back(U);
             nominal_trj.push_back(X_next);
         }
@@ -228,20 +224,21 @@ Solution CILQRSolver::get_nominal_solution(){
 
     // 添加长度验证
     if (nominal_trj.states.size() != arg.N + 1 || nominal_ctrl_sequence.size() != arg.N) {
-        throw std::length_error("初始轨迹生成异常");
+        throw std::length_error("Nominal trajectory length mismatch");
     }
     return solution;
 }
 
 double CILQRSolver::cal_cost(const Solution& solution){
     if (std::isnan(solution.ego_trj.get_states()[0][0])) {
-        throw std::runtime_error("检测到非法轨迹数据");
+        throw std::runtime_error("trajectory contains NaN values");
     }
     Vector2d P2;
     P2<<0,1;
     auto control_sequence = solution.control_sequence.get_control_sequence();
     auto trj              = solution.ego_trj.get_states();
     double cost_state = 0;
+    double cost_state_ref = 0;
     double cost_ctrl = 0;; 
     double cost_lane = 0;
     double cost_obs = 0;
@@ -255,20 +252,23 @@ double CILQRSolver::cal_cost(const Solution& solution){
         State X = trj[i];
         size_t index =  find_closest_point(ego.get_local_plan().get_points(),X);
         size_t match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
+        // match_index = index;
         Point X_r_point = ego.get_local_plan().get_points()[match_index];
-        State X_r = {X_r_point.x, X_r_point.y, 0, arg.desire_speed};
+        State X_r = {X_r_point.x, X_r_point.y, arg.desire_heading, arg.desire_speed};
         State X_e = X - X_r;
         cost_state = X_e.transpose() * arg.Q * X_e;
-        //计算车道偏离代价
+        //计算横向偏移代价
+        Vector2d dX,nor_r;
+        dX<< X_e[0],X_e[1];
+        nor_r<< -sin(X_r_point.heading),cos(X_r_point.heading);
+        cost_state_ref = pow(dX.dot(nor_r),2) * arg.ref_weight;
+        //计算超越车道边界代价  
         if(arg.if_cal_lane_cost){
-            Vector2d dX,nor_r;
-            dX<< X_e[0],X_e[1];
-            nor_r<< -sin(X_r_point.heading),cos(X_r_point.heading);
-            //左侧车道偏离代价
+            //左侧超越车道边界代价
             double l = dX.transpose() * nor_r;
             double c_left = l - arg.trace_safe_width_left;
             double cost_lane_left = arg.lane_q1*exp(arg.lane_q2*c_left);
-            //右侧车道偏离代价
+            //右侧超越车道边界代价
             double c_right = -l - arg.trace_safe_width_right;
             double cost_lane_right = arg.lane_q1*exp(arg.lane_q2*c_right);
             cost_lane = cost_lane_left + cost_lane_right;
@@ -277,7 +277,7 @@ double CILQRSolver::cal_cost(const Solution& solution){
         if(arg.if_cal_obs_cost){
             //计算与障碍物的距离
             if(i >= obs.get_states().size()){ // 添加长度检查
-                std::cerr << "障碍物轨迹长度不足！" << std::endl;
+                std::cerr << "Obs trajectory error" << std::endl;
                 break;
             }
             State obs_state = obs.get_states()[i];
@@ -292,7 +292,7 @@ double CILQRSolver::cal_cost(const Solution& solution){
             //返回代价
             cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
         } 
-        J_state_total += cost_state;
+        J_state_total += cost_state + cost_state_ref;
         J_constraint_total += cost_lane + cost_obs;
     }
 
@@ -344,17 +344,32 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
         // 找到最近参考点
         size_t index = find_closest_point(local_plan, X) ;
         size_t match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
-
+        // match_index = index;
         const Point& X_r_point = local_plan[match_index];
         State X_r;
-        X_r << X_r_point.x, X_r_point.y, X_r_point.heading, arg.desire_speed;
+        X_r << X_r_point.x, X_r_point.y, arg.desire_heading, arg.desire_speed;
 
         // 状态误差
         State X_e = X - X_r;
-
         // 基本状态代价导数
         Vector4d l_dx = 2 * arg.Q * X_e;
         Matrix4d l_ddx = 2 * arg.Q;
+
+        //计算横向偏移代价导数
+        Vector4d l_dx_ref;
+        Matrix4d l_ddx_ref;
+        Vector2d dX(X_e[0], X_e[1]);
+        Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+        l_dx_ref << -2*dX.dot(nor_r)*sin(X_r_point.heading),
+                     2*dX.dot(nor_r)*cos(X_r_point.heading),
+                     0, 
+                     0;
+        l_ddx_ref << 2*pow(sin(X_r_point.heading),2),       -sin(2*X_r_point.heading), 0, 0,
+                           -sin(2*X_r_point.heading), 2*pow(cos(X_r_point.heading),2), 0, 0,
+                                                   0,                               0, 0, 0,
+                                                   0,                               0, 0, 0;
+        l_dx_ref = l_dx_ref * arg.ref_weight;
+        l_ddx_ref = l_ddx_ref * arg.ref_weight;
 
         // 障碍物代价导数
         Vector4d db_obs = Vector4d::Zero();
@@ -373,16 +388,19 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
             double c = safe_dist - dist;
             double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
             db_obs = exp_term * c_dot;
-            ddb_obs = exp_term * (arg.obs_q2 * c_dot * c_dot.transpose());
+            Matrix4d ddc;
+            ddc << -1/dist,       0, 0, 0,
+                         0, -1/dist, 0, 0,
+                         0,       0, 0, 0,
+                         0,       0, 0, 0;
+            ddb_obs = exp_term * (arg.obs_q2 * c_dot * c_dot.transpose() + ddc);
         }
 
         // 车道保持代价导数
         Vector4d db_lane_total = Vector4d::Zero();
         Matrix4d ddb_lane_total = Matrix4d::Zero();
         if (arg.if_cal_lane_cost) {
-            Vector2d dX(X_e[0], X_e[1]);
-            Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
-            
+
             // 左侧约束
             double l = dX.dot(nor_r);
             double c_left = l - arg.trace_safe_width_left;
@@ -403,9 +421,8 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
             ddb_lane_total = ddb_left + ddb_right;
         }
 
-        // 合并状态导数
-        this->lx[i] = l_dx + db_obs + db_lane_total;
-        this->lxx[i] = l_ddx + ddb_obs + ddb_lane_total;
+        this->lx[i] = l_dx + l_dx_ref + db_obs + db_lane_total;
+        this->lxx[i] = l_ddx + l_ddx_ref + ddb_obs + ddb_lane_total;
     }
 
     // 第二部分：控制相关导数
@@ -467,17 +484,21 @@ void CILQRSolver::backward() {
         Quu[i] = luu[i] + df_du.transpose() * V_xx * df_du;
 
 
+
         // SVD分解求逆
         JacobiSVD<Matrix2d> svd(Quu[i], ComputeFullU | ComputeFullV);
         Vector2d singular_values = svd.singularValues();
         const Matrix2d& U = svd.matrixU();
         const Matrix2d& V = svd.matrixV();
-        
+        Matrix2d Quu_inv;
+        // Quu_inv = (Quu[i] + lambda * Matrix2d::Identity()).inverse();
         // 正则化奇异值
         for(int j=0; j<2; ++j){
-            singular_values[j] = std::max(singular_values[j], 1e-8) + lambda;
+            // singular_values[j] = std::max(singular_values[j],1.0);
+            // singular_values[j] = singular_values[j] * singular_values[j]/(singular_values[j] + lambda);
+            singular_values[j] = std::max(singular_values[j],1e-6) + lamb;
         }
-        Matrix2d Quu_inv = V * singular_values.cwiseInverse().asDiagonal() * U.transpose();
+        Quu_inv = V * singular_values.cwiseInverse().asDiagonal() * U.transpose();
 
         // 计算控制修正量
         this->k[i] = -Quu_inv * Qu[i];
@@ -492,18 +513,19 @@ void CILQRSolver::backward() {
 Solution CILQRSolver::forward(const Solution& cur_solution){
         
     // 初始化线搜索参数
-    const int max_iterations = 30;
+    const int max_iterations = 8;
     double alpha = 1;
     bool found = false;
-
     double J_old = cal_cost(cur_solution);
+    double J_new = 0;
+    double delta_cost = 0;
+    double delta_V = 0;
     auto& U = cur_solution.control_sequence.get_control_sequence();
     auto& X = cur_solution.ego_trj.get_states();
     static Solution new_solution;
     std::vector<Control> U_tmp;
     std::vector<State> X_tmp;
     Vector4d delta_x;
-    double delta_V = 0;
     for (int iter = 0; iter < max_iterations; ++iter) {
         // 临时存储新控制序列
         U_tmp = U;
@@ -524,12 +546,13 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
         // 计算新代价
         new_solution.ego_trj.states.swap(X_tmp);
         new_solution.control_sequence.controls.swap(U_tmp);
-        double J_new = cal_cost(new_solution);
-        double delta_cost = J_new - J_old;
-
+        J_new = cal_cost(new_solution);
+        
+        delta_cost = J_new - J_old;
+        
         // 接受条件判断
         if (delta_cost/(delta_V) <10 && delta_cost/(delta_V)>1e-4) {
-            found = true;
+             found = true;
             break;
         } else {
             alpha *= 0.5;
@@ -549,7 +572,7 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
 Control CILQRSolver::pure_pursuit(const State& X_cur) {
     const auto& local_plan = ego.get_local_plan().get_points();
     if (local_plan.empty()) {
-        throw std::runtime_error("局部路径为空");
+        throw std::runtime_error("Local plan is empty!");
     }
 
     // 1. 查找最近点（复用现有函数）

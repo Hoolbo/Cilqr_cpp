@@ -1,22 +1,23 @@
-﻿#include <iostream>
+#include <iostream>
 #include "ilqr.h"
 #include "utils.h"
-
+#include <ctime>
 
 int main(){
     std::vector<Point> way_points;
-    std::vector<double> global_x_log,global_y_log,x_log,y_log;
-    std::vector<double> steer_log;
+    std::vector<std::vector<double>> global_plan_log(3),ego_log(4);
 
     //获取地图信息
     std::vector<std::vector<double>> m_map_info = load_map();
 
     //填充路点
-    for(int i=0;i<2000;i++){
+    for(int i=300;i<2000;i++){
         Point point(m_map_info[0][i],m_map_info[1][i],m_map_info[2][i]);
         way_points.push_back(point);
-        global_x_log.push_back(point.x);
-        global_y_log.push_back(point.y);
+        global_plan_log[0].push_back(m_map_info[0][i]);
+        global_plan_log[1].push_back(m_map_info[1][i]);
+        global_plan_log[2].push_back(m_map_info[2][i]);
+
     }
 
     // 设置全局路径
@@ -28,11 +29,12 @@ int main(){
 
     //车辆模型初始化
     Vehicle ego;
-    ego.set_state(m_map_info[0][1],m_map_info[1][1],m_map_info[2][1],arg.desire_speed);
+    ego.set_state(m_map_info[0][300],m_map_info[1][300],m_map_info[2][300],arg.desire_speed);
     ego.set_global_plan(global_plan);
     ego.set_model(SystemModel(arg.dt,arg.N));
-    x_log.push_back(ego.get_state()[0]);
-    y_log.push_back(ego.get_state()[1]);
+    for(int i=0;i<4;i++){
+        ego_log[i].push_back(ego.get_state()[i]);
+    }
     
     //障碍物初始化
     Trajectory obs_trj;
@@ -50,26 +52,28 @@ int main(){
     //主循环
     // for(int i = 0;i<arg.tf/arg.dt;i++){
     for(int i = 0;i<2000;i++){
-        std::cout<<"第 " << i <<" 次迭代: "<<std::endl;
+        std::cout<<"***** Iter ***** " << i <<std::endl;
         // 问题求解
+        clock_t start = clock();
         solution = cilqr_solver.solve(cur_state,obs_trj); 
-        
+        clock_t end = clock();
+        double cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
+        std::cout << "CPU time used: " << cpu_time_used * 1000 << " ms\n";
+
+        //更新车辆状态以及控制
         cur_ctrl = solution.control_sequence.controls[0];
         cur_state = ego.get_model().dynamics(cur_state,cur_ctrl);
-        x_log.push_back(cur_state[0]);
-        y_log.push_back(cur_state[1]);
-        steer_log.push_back(cur_ctrl[1]);
-        std::cout<<cur_state<<std::endl;
-        if(i%200 == 0){
-            my_plot(global_x_log,global_y_log,x_log,y_log);
+        //记录车辆历史轨迹
+        for(int j=0;j<4;j++){
+            ego_log[j].push_back(cur_state[j]);
         }
-
+        std::cout<<cur_state<<std::endl;
+        // if(i%3==0){
+            my_plot(global_plan_log,ego_log,solution);
+        // }
+ 
     }
 
-    
-
-    // 保持窗口打开
-    matplot::show();
     mclTerminateApplication();
     return 0;
 }
