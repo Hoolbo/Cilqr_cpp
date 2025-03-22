@@ -106,7 +106,7 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
     Point local_last_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()-1];
     Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
     if(local_last_point == global_last_point){
-        arg.desire_speed = 0;
+        arg.desire_speed = 1;
         arg.desire_heading = 0;
         arg.Q(2,2) = 0;
     }
@@ -152,7 +152,7 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
                 break;
             }
         } else { // 代价未下降时增加正则化
-            lamb = lamb * 2;
+            lamb = lamb * 3;
             // 失败终止条件判断
              if (lamb > arg.lamb_max) {
                 pre_solution = Solution();
@@ -514,7 +514,7 @@ void CILQRSolver::backward() {
 Solution CILQRSolver::forward(const Solution& cur_solution){
         
     // 初始化线搜索参数
-    const int max_iterations = 8;
+    const int max_iterations = 5;
     double alpha = 1;
     bool found = false;
     double J_old = cal_cost(cur_solution);

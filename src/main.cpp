@@ -11,7 +11,7 @@ int main(){
     std::vector<std::vector<double>> m_map_info = load_map();
 
     //填充路点
-    for(int i=300;i<2000;i++){
+    for(int i=300;i<1000;i++){
         Point point(m_map_info[0][i],m_map_info[1][i],m_map_info[2][i]);
         way_points.push_back(point);
         global_plan_log[0].push_back(m_map_info[0][i]);
