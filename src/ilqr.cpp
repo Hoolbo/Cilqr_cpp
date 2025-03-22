@@ -166,6 +166,7 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
         pre_solution = Solution();
         std::cerr << "Unconverged::Maxmum iteration" << std::endl;
     }
+    pre_solution = current_solution;
     return current_solution;
 }
 //获取标称轨迹

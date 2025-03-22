@@ -12,7 +12,7 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 40; //Horizen
+        int N = 50; //Horizen
         double tol = 1e-3;
         double rel_tol = 1e-3;
         int max_iter = 30;
