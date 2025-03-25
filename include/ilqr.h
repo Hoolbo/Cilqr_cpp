@@ -12,7 +12,7 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 50; //Horizen
+        int N = 100; //Horizen
         double tol = 1e-3;
         double rel_tol = 1e-4;
         int max_iter = 50;
@@ -59,10 +59,10 @@
         //横向偏移代价
         double ref_weight = 3;
         Arg() { // 在构造函数中初始化矩阵
-            Q << 0.01, 0, 0, 0, 
-                 0, 0.01, 0, 0,
+            Q << 0.1, 0, 0, 0, 
+                 0, 0.1, 0, 0,
                  0, 0, 0, 0,
-                 0, 0, 0, 1;
+                 0, 0, 0, 0.5;
 
             R <<    0.1,    0,
                     0,    100;
