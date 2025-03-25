@@ -29,7 +29,7 @@ int main(){
 
     //车辆模型初始化
     Vehicle ego;
-    ego.set_state(m_map_info[0][300],m_map_info[1][300],m_map_info[2][300],arg.desire_speed);
+    ego.set_state(m_map_info[0][300],m_map_info[1][300],m_map_info[2][300],5);
     ego.set_global_plan(global_plan);
     ego.set_model(SystemModel(arg.dt,arg.N));
     for(int i=0;i<4;i++){
@@ -39,7 +39,7 @@ int main(){
     //障碍物初始化
     Trajectory obs_trj;
     for(int i=0;i<arg.N+1;i++){
-        obs_trj.push_back(State(300,3,0,0));
+        obs_trj.push_back(State(260,0,0,0));
     }
 
     //求解器初始化

@@ -129,19 +129,21 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
             ));
         }
         trajectory_plot->update(trajectory[0],trajectory[1]);
-
+        
+        //绘制障碍物
         double obs_x = obs_traj.states[0][0];
         double obs_y = obs_traj.states[0][1];
         double obs_theta = obs_traj.states[0][2]; 
         std::vector<double> obs_rect_x, obs_rect_y;
         double obs_cos_theta = cos(obs_theta);
         double obs_sin_theta = sin(obs_theta);
-        double obs_radius = 1;
+        double obs_half_length = 2.7 / 2;
+        double obs_half_width = 2 / 2;
         std::array<std::pair<double, double>, 4> obs_local_points = {
-            std::make_pair( obs_radius,  obs_radius),  // 前右
-            std::make_pair( obs_radius, -obs_radius),  // 后右
-            std::make_pair(-obs_radius, -obs_radius),  // 后左
-            std::make_pair(-obs_radius,  obs_radius)   // 前左
+            std::make_pair( obs_half_length,  obs_half_width),  // 前右
+            std::make_pair( obs_half_length, -obs_half_width),  // 后右
+            std::make_pair(-obs_half_length, -obs_half_width),  // 后左
+            std::make_pair(-obs_half_length,  obs_half_width)   // 前左
         };
         for (const auto& pt : obs_local_points) {
             // 旋转和平移变换
@@ -162,6 +164,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
             ));
         }
         obs_traj_plot->update(obs_rect_x, obs_rect_y);
+
 
         // 更新车辆矩形
         double x = ego_log[0].back();

@@ -14,11 +14,11 @@
         //CILQR参数
         int N = 50; //Horizen
         double tol = 1e-3;
-        double rel_tol = 1e-3;
-        int max_iter = 10;
+        double rel_tol = 1e-4;
+        int max_iter = 50;
         double lamb_init = 10;
         double lamb_factor = 2;
-        double lamb_max = 100;
+        double lamb_max = 10000;
         //纯跟踪参数
         double kv = 0.3; //前视距离系数
         double kp = 0.8; //速度P控制器系数
@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 5;
+        double desire_speed = 10;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
@@ -40,28 +40,32 @@
         double steer_min_q1 = 1;
         double steer_min_q2 = 1;
         //道路约束
-        double trace_safe_width_left = 4;
-        double trace_safe_width_right = 4;
-        double lane_q1 = 2;
-        double lane_q2 = 2;
+        double trace_safe_width_left = 5;
+        double trace_safe_width_right = 5;
+        double lane_q1 = 1;
+        double lane_q2 = 1;
         //障碍约束
-        double obs_q1 = 1;
-        double obs_q2 = 2;
-        double buff = 1;
-        double obs_rad = 1 + buff;
+        double obs_q1 = 5;
+        double obs_q2 = 3;
+        double obs_length = 2.7;
+        double obs_width = 2;
+        double safe_a_buffer = 3;
+        double safe_b_buffer = 1;
+        // double buff = 0;
+        // double obs_rad = 1 + buff;
         //QR矩阵
         Matrix4d Q;
         Matrix2d R;
         //横向偏移代价
-        double ref_weight = 1;
+        double ref_weight = 3;
         Arg() { // 在构造函数中初始化矩阵
-            Q << 0.2, 0, 0, 0,
-                 0, 0.2, 0, 0,
+            Q << 0.01, 0, 0, 0, 
+                 0, 0.01, 0, 0,
                  0, 0, 0, 0,
-                 0, 0, 0, 2;
+                 0, 0, 0, 1;
 
-            R <<    1,     0,
-                    0,    1000;
+            R <<    0.1,    0,
+                    0,    100;
         }
     };
     //路点结构体
@@ -127,9 +131,9 @@
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 2;
-            double lf      = 1.597;
-            double lr      =  1.133;
+            double ego_rad = 2.5;
+            double lf      = 1.6;
+            double lr      =  1.13;
             double len       =  2.73;
             double width   =  2;
             double dt = 0.1;
@@ -251,8 +255,9 @@
 
     class CILQRSolver{
         private:
-
+            // double J_total = 0;
             double lamb ;
+            double average_gradient = 0.0;
             bool converged = false;
             Solution pre_solution;
             Vehicle ego;
@@ -271,7 +276,7 @@
             std::vector<MatrixXd> Qu;
             std::vector<MatrixXd> Quu;
             Control pure_pursuit(const State& X_cur);
-            Solution get_nominal_solution();
+            Solution get_nominal_solution(const State& init_state);
             double cal_cost(const Solution& solution);
             void compute_df(const Solution& solution);
             void compute_cost_derivatives(const Solution& solution);

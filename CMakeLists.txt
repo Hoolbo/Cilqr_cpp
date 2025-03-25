@@ -36,17 +36,18 @@ link_directories(
     ${Numpy_LIBRARY}
 )
 
-# 优化配置
+# # 优化配置
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
 endif()
 
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 ")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 # 目标配置
 aux_source_directory(./src SRC_LIST)
 add_executable(main ${SRC_LIST})
+# add_executable(main test.cpp)
 
 # 优化选项
 target_compile_options(main PRIVATE
