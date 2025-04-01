@@ -2,7 +2,7 @@
 #include <Eigen/Eigen>
 #include <iostream>
 using namespace Eigen;
-
+//测试用的 与算法无关
 Vector4d dynamics( Vector4d X, Vector2d U){
     double lr = 1.133;
     double lf = 1.6;

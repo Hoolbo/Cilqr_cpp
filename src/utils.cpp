@@ -5,66 +5,74 @@ std::vector<std::vector<double>> load_map(){
 
     std::vector<std::vector<double>> map_info(3);
 
-    if (!mclInitializeApplication(nullptr, 0)) { // 必须最先调用
-        std::cerr << "Could not initialize MATLAB Runtime" << std::endl;
-    }
+    // if (!mclInitializeApplication(nullptr, 0)) { // 必须最先调用
+    //     std::cerr << "Could not initialize MATLAB Runtime" << std::endl;
+    // }
 
-    MATFile *pmatFile = matOpen("C:/Users/Hoolbo/Code/CILQR/Cilqr_cpp/map.mat", "r");
-    if (!pmatFile) {
-        std::cerr << "Error: 无法打开map.mat文件" << std::endl;
-    }
+    // MATFile *pmatFile = matOpen("C:/Users/Hoolbo/Code/CILQR/Cilqr_cpp/map.mat", "r");
+    // if (!pmatFile) {
+    //     std::cerr << "Error: 无法打开map.mat文件" << std::endl;
+    // }
 
-    mxArray *pMxArray = matGetVariable(pmatFile, "xcoord");
-    if (!pMxArray) {
-        std::cerr << "Error: 文件内找不到变量xcoord" << std::endl;
-        matClose(pmatFile);
-    }
+    // mxArray *pMxArray = matGetVariable(pmatFile, "xcoord");
+    // if (!pMxArray) {
+    //     std::cerr << "Error: 文件内找不到变量xcoord" << std::endl;
+    //     matClose(pmatFile);
+    // }
 
-    size_t M = mxGetM(pMxArray); // 行数[1](@ref)
-    size_t N = mxGetN(pMxArray); // 列数
-    double *data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
+    // size_t M = mxGetM(pMxArray); // 行数[1](@ref)
+    // size_t N = mxGetN(pMxArray); // 列数
+    // double *data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
 
-    for(int i=0;i<M;i++){
-        for(int j=0;j<N;j++){
-            map_info[0].push_back(data[i*N+j]);
-        }
-    }
+    // for(int i=0;i<M;i++){
+    //     for(int j=0;j<N;j++){
+    //         map_info[0].push_back(data[i*N+j]);
+    //     }
+    // }
 
-    pMxArray = matGetVariable(pmatFile, "ycoord");
-    if (!pMxArray) {
-        std::cerr << "Error: 文件内找不到变量ycoord" << std::endl;
-        matClose(pmatFile);
-    }
+    // pMxArray = matGetVariable(pmatFile, "ycoord");
+    // if (!pMxArray) {
+    //     std::cerr << "Error: 文件内找不到变量ycoord" << std::endl;
+    //     matClose(pmatFile);
+    // }
 
-    M = mxGetM(pMxArray); // 行数[1](@ref)
-    N = mxGetN(pMxArray); // 列数
-    data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
+    // M = mxGetM(pMxArray); // 行数[1](@ref)
+    // N = mxGetN(pMxArray); // 列数
+    // data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
 
-    for(int i=0;i<M;i++){
-        for(int j=0;j<N;j++){
-            map_info[1].push_back(data[i*N+j]);
-        }
-    }
+    // for(int i=0;i<M;i++){
+    //     for(int j=0;j<N;j++){
+    //         map_info[1].push_back(data[i*N+j]);
+    //     }
+    // }
 
-    pMxArray = matGetVariable(pmatFile, "theta");
-    if (!pMxArray) {
-        std::cerr << "Error: 文件内找不到变量theta" << std::endl;
-        matClose(pmatFile);
-    }
+    // pMxArray = matGetVariable(pmatFile, "theta");
+    // if (!pMxArray) {
+    //     std::cerr << "Error: 文件内找不到变量theta" << std::endl;
+    //     matClose(pmatFile);
+    // }
 
-    M = mxGetM(pMxArray); // 行数[1](@ref)
-    N = mxGetN(pMxArray); // 列数
-    data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
+    // M = mxGetM(pMxArray); // 行数[1](@ref)
+    // N = mxGetN(pMxArray); // 列数
+    // data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
 
-    for(int i=0;i<M;i++){
-        for(int j=0;j<N;j++){
-            map_info[2].push_back(data[i*N+j]);
-        }
-    }
+    // for(int i=0;i<M;i++){
+    //     for(int j=0;j<N;j++){
+    //         map_info[2].push_back(data[i*N+j]);
+    //     }
+    // }
 
-        mxDestroyArray(pMxArray);
-        matClose(pmatFile);
-        return map_info;
+    //     mxDestroyArray(pMxArray);
+    //     matClose(pmatFile);
+
+    //本来是用matlab导入地图，现在改成自己用正弦曲线拟合地图
+    for(int i=0;i<1000;i++){
+        map_info[0].push_back(i*1.0);
+        map_info[1].push_back(sin(i*1.0*0.0628));
+        map_info[2].push_back(atan2(sin(i*1.0*0.0628)-sin((i-1)*1.0*0.0628),1.0));
+    } 
+
+    return map_info;
 }
 
 

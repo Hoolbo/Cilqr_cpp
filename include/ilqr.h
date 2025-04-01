@@ -1,4 +1,4 @@
-#ifndef ILQR_H
+﻿#ifndef ILQR_H
     #define ILQR_H 
     #include <Eigen/Eigen>
     #include <algorithm>
@@ -12,7 +12,7 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 50; //Horizen
+        int N = 80; //Horizen
         double tol = 1e-3;
         double rel_tol = 1e-5;
         int max_iter = 50;
@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 5;
+        double desire_speed = 10;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;

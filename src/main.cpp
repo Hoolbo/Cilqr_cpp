@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include "ilqr.h"
 #include "utils.h"
 #include <ctime>
@@ -39,7 +39,7 @@ int main(){
     //障碍物初始化
     Trajectory obs_trj;
     for(int i=0;i<arg.N+1;i++){
-        obs_trj.push_back(State(260,2,0,0));
+        obs_trj.push_back(State(380,1,0,0));
     }
 
     //求解器初始化
@@ -74,6 +74,6 @@ int main(){
  
     }
 
-    mclTerminateApplication();
+    // mclTerminateApplication();
     return 0;
 }
