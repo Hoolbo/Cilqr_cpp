@@ -232,27 +232,13 @@ Solution CILQRSolver::get_nominal_solution(const State& init_state){
     State X0 = init_state;
     nominal_trj.push_back(X0);
     if(this->pre_solution.control_sequence.size()!=0){
-        // if(arg.N>=11){
-        //     for(int i=0; i<5; i++){
-        //         Control U = pre_solution.control_sequence.get_control_sequence()[i+1];
-        //         nominal_ctrl_sequence.push_back(U);
-        //     };
-        //     for(int i=5; i<arg.N; i++){
-        //         nominal_ctrl_sequence.push_back(Control(0,0));
-        //     }
-        // }
-        // else{
-        //     for(int i=0;i<arg.N;i++){
-        //         nominal_ctrl_sequence.push_back(Control(0.01,0));
-        //     }
-        // }
         //如果有上一帧的控制序列，则拼接控制序列
         for(int i=0;i<(this->arg.N - 1);i++){
             Control U = pre_solution.control_sequence.get_control_sequence()[i+1];
             nominal_ctrl_sequence.push_back(U);
         };
-        // nominal_ctrl_sequence.push_back(pre_solution.control_sequence.get_control_sequence()[arg.N-1]);
-        nominal_ctrl_sequence.push_back(Control(0,0));
+        nominal_ctrl_sequence.push_back(pre_solution.control_sequence.get_control_sequence()[arg.N-1]);
+        // nominal_ctrl_sequence.push_back(Control(0,0));
         //更新轨迹
         for(int i=0; i < this->arg.N; i++){
             U = nominal_ctrl_sequence.get_control_sequence()[i];
@@ -364,7 +350,8 @@ double CILQRSolver::cal_cost(const Solution& solution){
             double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
             double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
             Matrix2d rotation_matrix;
-            rotation_matrix << cos(obs_state[2]), -sin(obs_state[2]), sin(obs_state[2]), cos(obs_state[2]);
+            rotation_matrix << cos(obs_state[2]), sin(obs_state[2]), 
+                              -sin(obs_state[2]), cos(obs_state[2]);
             Vector2d dX_obs_cord =  rotation_matrix * dX_obs;
             c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2)+pow(dX_obs_cord[1],2)/pow(b,2));
             cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
@@ -483,8 +470,8 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
             // 坐标变换到障碍物局部系
             Vector2d dX_obs(dx, dy);
             Matrix2d rotation_matrix;
-            rotation_matrix << cos(obs_state[2]), -sin(obs_state[2]), 
-                              sin(obs_state[2]),  cos(obs_state[2]);
+            rotation_matrix << cos(obs_state[2]),  sin(obs_state[2]), 
+                              -sin(obs_state[2]),  cos(obs_state[2]);
             Vector2d dX_obs_cord = rotation_matrix * dX_obs;
         
             // 计算约束函数 c

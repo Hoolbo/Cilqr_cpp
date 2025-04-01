@@ -12,13 +12,13 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 100; //Horizen
+        int N = 50; //Horizen
         double tol = 1e-3;
-        double rel_tol = 1e-4;
+        double rel_tol = 1e-5;
         int max_iter = 50;
-        double lamb_init = 10;
+        double lamb_init = 1e-2;
         double lamb_factor = 2;
-        double lamb_max = 10000;
+        double lamb_max = 100;
         //纯跟踪参数
         double kv = 0.3; //前视距离系数
         double kp = 0.8; //速度P控制器系数
@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 10;
+        double desire_speed = 5;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
@@ -40,16 +40,16 @@
         double steer_min_q1 = 1;
         double steer_min_q2 = 1;
         //道路约束
-        double trace_safe_width_left = 5;
-        double trace_safe_width_right = 5;
-        double lane_q1 = 1;
-        double lane_q2 = 1;
+        double trace_safe_width_left = 4;
+        double trace_safe_width_right = 4;
+        double lane_q1 = 5;
+        double lane_q2 = 3;
         //障碍约束
         double obs_q1 = 5;
         double obs_q2 = 3;
         double obs_length = 2.7;
         double obs_width = 2;
-        double safe_a_buffer = 3;
+        double safe_a_buffer = 5;
         double safe_b_buffer = 1;
         // double buff = 0;
         // double obs_rad = 1 + buff;
@@ -59,10 +59,10 @@
         //横向偏移代价
         double ref_weight = 3;
         Arg() { // 在构造函数中初始化矩阵
-            Q << 0.1, 0, 0, 0, 
-                 0, 0.1, 0, 0,
+            Q << 0.01, 0, 0, 0, 
+                 0, 0.01, 0, 0,
                  0, 0, 0, 0,
-                 0, 0, 0, 0.5;
+                 0, 0, 0, 1;
 
             R <<    0.1,    0,
                     0,    100;
@@ -103,7 +103,6 @@
         return theta - M_PI;
     }
 
-
     BarrieInfo barrierFunction(double q1, double q2, double c, VectorXd dc);
     //全局路径
     class GlobalPlan{
@@ -131,7 +130,7 @@
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 2.5;
+            double ego_rad = 2;
             double lf      = 1.6;
             double lr      =  1.13;
             double len       =  2.73;
