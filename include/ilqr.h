@@ -3,7 +3,7 @@
     #include <Eigen/Eigen>
     #include <algorithm>
     using namespace Eigen;
-    #define M_PI 3.1415
+    // #define M_PI 3.1415
     typedef Vector4d State;
     typedef Vector2d Control;
 

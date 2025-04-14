@@ -4,6 +4,7 @@
 #include "matplotlibcpp.h"
 #include "Eigen/Eigen"
 #include "ilqr.h"
+#include <memory>
 
 void my_plot(const std::vector<std::vector<double>>& global_plan_log,
              const std::vector<std::vector<double>>& ego_log,

@@ -642,8 +642,8 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
     double J_new = 0;
     double delta_cost = 0;
     double delta_V = 0;
-    auto& U = cur_solution.control_sequence.get_control_sequence();
-    auto& X = cur_solution.ego_trj.get_states();
+    auto  U = cur_solution.control_sequence.get_control_sequence();
+    auto  X = cur_solution.ego_trj.get_states();
     static Solution new_solution;
     std::vector<Control> U_tmp;
     std::vector<State> X_tmp;
