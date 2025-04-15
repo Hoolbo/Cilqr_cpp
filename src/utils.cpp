@@ -84,10 +84,12 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         namespace plt = matplotlibcpp;
         // 使用智能指针避免静态变量初始化问题
         static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot,obs_traj_plot, 
-                                        trajectory_plot,vehicle_rect_plot;
+                                        trajectory_plot,vehicle_rect_plot,vehicle_rear_rect_plot;
         
         static bool figure_initialized = false;
         constexpr double VEHICLE_LENGTH = 2.7;  // 车长（单位：米）
+        constexpr double VEHICLE_FRONT_LENGTH = 2.7;  // 车长（单位：米）
+        constexpr double VEHICLE_REAR_LENGTH = 2.7;  // 车长（单位：米）
         constexpr double VEHICLE_WIDTH = 2;   // 车宽
         // 动态视图参数
         constexpr double FOLLOW_FACTOR = 0.7;
@@ -178,9 +180,10 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         double x = ego_log[0].back();
         double y = ego_log[1].back();
         double theta = ego_log[2].back(); 
+        double gamma = ego_log[3].back();
         // 计算矩形四角相对坐标
-        const double half_len = VEHICLE_LENGTH / 2;
-        const double half_wid = VEHICLE_WIDTH / 2;
+        const double half_len = VEHICLE_FRONT_LENGTH /1.3;
+        const double half_wid = VEHICLE_WIDTH / 2 ;
         std::array<std::pair<double, double>, 4> local_points = {
             std::make_pair( half_len,  half_wid),  // 前右
             std::make_pair( half_len, -half_wid),  // 后右
@@ -211,6 +214,47 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
             ));
         }
         vehicle_rect_plot->update(rect_x, rect_y);
+
+    //绘制铰接车后部车框
+    double theta_r  = theta + gamma ;
+    double x_r = x - VEHICLE_FRONT_LENGTH * cos(theta) - VEHICLE_REAR_LENGTH * cos(theta_r);
+    double y_r = y - VEHICLE_FRONT_LENGTH * sin(theta) - VEHICLE_REAR_LENGTH * sin(theta_r);
+    // 计算矩形四角相对坐标
+    const double half_len_r = VEHICLE_REAR_LENGTH / 1.1 ;
+    const double half_wid_r = VEHICLE_WIDTH / 2;
+    std::array<std::pair<double, double>, 4> local_points_r = {
+        std::make_pair( half_len_r,  half_wid_r),  // 前右
+        std::make_pair( half_len_r, -half_wid_r),  // 后右
+        std::make_pair(-half_len_r, -half_wid_r),  // 后左
+        std::make_pair(-half_len_r,  half_wid_r)   // 前左
+    };
+    // 坐标系变换
+    std::vector<double> rect_x_r, rect_y_r;
+    double cos_theta_r = cos(theta_r);
+    double sin_theta_r = sin(theta_r);
+    for (const auto& pt_r : local_points_r) {
+        // 旋转和平移变换
+        double global_x_r = x_r + pt_r.first * cos_theta_r - pt_r.second * sin_theta_r;
+        double global_y_r = y_r + pt_r.first * sin_theta_r + pt_r.second * cos_theta_r;
+        rect_x_r.push_back(global_x_r);
+        rect_y_r.push_back(global_y_r);
+    }
+    // 闭合矩形
+    rect_x_r.push_back(rect_x_r.front());
+    rect_y_r.push_back(rect_y_r.front());
+    // 更新或创建绘图对象
+    if (!vehicle_rear_rect_plot) {
+        vehicle_rear_rect_plot.reset(new matplotlibcpp::Plot(
+            " ",
+            rect_x_r, 
+            rect_y_r, 
+            "b-"
+        ));
+    }
+    vehicle_rear_rect_plot->update(rect_x_r, rect_y_r);
+
+
+
         
         // 历史轨迹
         if (!ego_plot){
