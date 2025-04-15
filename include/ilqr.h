@@ -28,7 +28,7 @@
         //代价参数
         double desire_speed = 0;
         double desire_heading = 0;
-        bool if_cal_obs_cost = false;
+        bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = false;
         bool if_cal_steer_cost = false;
         //最大转向约束
