@@ -48,16 +48,22 @@ BarrieInfo barrierFunction(double q1,double q2,double c,VectorXd dc){
 }
 //系统模型
 State SystemModel::dynamics(const State& X, const Control& U){
-    double beta = atan((lr / (lr + lf)) * tan(U[1]));
+    double x = X[0];
+    double y = X[1];
+    double theta = X[2];
+    double gamma = X[3];
+    double v = U[0];
+    double gamma_dot = U[1];
     State X_next;
     X_next << 
-        X[0] + X[3] * cos(X[2] + beta) * dt,
-        X[1] + X[3] * sin(X[2] + beta) * dt,
-        X[2] + (X[3] / len) * tan(U[1]) * cos(beta) * dt,
-        X[3] + U[0] * dt;
+        x + cos(theta)*v*dt,
+        y + sin(theta)*v*dt,
+        theta + ((-sin(gamma)/this->len)*v +(-this->lr/this->len)*gamma_dot)*dt ,
+        gamma + gamma_dot * dt;
     X_next(2) = angle_wrap(X_next(2));
     return X_next;
 }
+
 Matrix4d SystemModel::get_jacobian_state(const Vector4d& X, const Vector2d& U){
     double phi = X(2);
     double v = X(3);
