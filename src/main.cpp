@@ -29,7 +29,7 @@ int main(){
 
     //车辆模型初始化
     Vehicle ego;
-    ego.set_state(m_map_info[0][300],m_map_info[1][300],m_map_info[2][300],5);
+    ego.set_state(m_map_info[0][300],m_map_info[1][300],m_map_info[2][300],0);
     ego.set_global_plan(global_plan);
     ego.set_model(SystemModel(arg.dt,arg.N));
     for(int i=0;i<4;i++){
@@ -67,7 +67,15 @@ int main(){
         for(int j=0;j<4;j++){
             ego_log[j].push_back(cur_state[j]);
         }
-        std::cout<<cur_state<<std::endl;
+
+        std::cout<<"状态如下"<<std::endl;
+        std::cout<<"x   :  "<<cur_state[0]<<std::endl;
+        std::cout<<"y   :   "<<cur_state[1]<<std::endl;
+        std::cout<<"theta   :   "<<cur_state[2]<<std::endl;
+        std::cout<<"gamma   :   "<<cur_state[3]<<std::endl;
+         std::cout<<"控制如下"<<std::endl;
+         std::cout<<"v  :   "<< cur_ctrl[0]<<std::endl;
+         std::cout<<"omega  :   "<< cur_ctrl[1]<<std::endl;
         // if(i%3==0){
             my_plot(global_plan_log,ego_log,obs_trj,solution);
         // }

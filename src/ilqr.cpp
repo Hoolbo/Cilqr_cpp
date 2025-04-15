@@ -279,7 +279,7 @@ Solution CILQRSolver::get_nominal_solution(const State& init_state){
             //     -arg.steer_angle_max, 
             //     arg.steer_angle_max);
             // 前向模拟
-            U << 0.01,0;
+            U << 10,0;
             State X_next = ego.get_model().dynamics(X_cur, U);
             nominal_ctrl_sequence.push_back(U);
             nominal_trj.push_back(X_next);
@@ -337,7 +337,8 @@ double CILQRSolver::cal_cost(const Solution& solution){
         size_t match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
         // match_index = index;
         Point X_r_point = ego.get_local_plan().get_points()[match_index];
-        State X_r = {X_r_point.x, X_r_point.y, arg.desire_heading, arg.desire_speed};
+        //铰接角期望到0
+        State X_r = {X_r_point.x, X_r_point.y, X_r_point.heading, 0};
         State X_e = X - X_r;
         cost_state = X_e.transpose() * arg.Q * X_e;
         //计算横向偏移代价
@@ -458,7 +459,7 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
         match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
         // match_index = index;
         const Point& X_r_point = local_plan[match_index];
-        X_r << X_r_point.x, X_r_point.y, arg.desire_heading, arg.desire_speed;
+        X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
 
         // 状态误差
         X_e = X - X_r;

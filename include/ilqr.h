@@ -12,13 +12,13 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 80; //Horizen
-        double tol = 1e-3;
+        int N = 50; //Horizen
+        double tol = 1;
         double rel_tol = 1e-5;
         int max_iter = 50;
-        double lamb_init = 1e-2;
+        double lamb_init = 10;
         double lamb_factor = 2;
-        double lamb_max = 100;
+        double lamb_max = 1000;
         //纯跟踪参数
         double kv = 0.3; //前视距离系数
         double kp = 0.8; //速度P控制器系数
@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 10;
+        double desire_speed = 0;
         double desire_heading = 0;
         bool if_cal_obs_cost = false;
         bool if_cal_lane_cost = false;
@@ -62,9 +62,9 @@
             Q << 1, 0, 0, 0, 
                       0, 1, 0, 0,
                       0, 0, 1, 0,
-                      0, 0, 0, 0;
+                      0, 0, 0, 1;
 
-            R <<  1,        0,
+            R <<     0.1,     0,
                           0,    1;
         }
     };
