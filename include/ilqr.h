@@ -28,9 +28,9 @@
         //代价参数
         double desire_speed = 10;
         double desire_heading = 0;
-        bool if_cal_obs_cost = true;
-        bool if_cal_lane_cost = true;
-        bool if_cal_steer_cost = true;
+        bool if_cal_obs_cost = false;
+        bool if_cal_lane_cost = false;
+        bool if_cal_steer_cost = false;
         //最大转向约束
         double steer_angle_max = 1;
         double steer_max_q1 = 1;
@@ -57,15 +57,15 @@
         Matrix4d Q;
         Matrix2d R;
         //横向偏移代价
-        double ref_weight = 3;
+        double ref_weight = 0;
         Arg() { // 在构造函数中初始化矩阵
-            Q << 0.01, 0, 0, 0, 
-                 0, 0.01, 0, 0,
-                 0, 0, 0, 0,
-                 0, 0, 0, 1;
+            Q << 1, 0, 0, 0, 
+                      0, 1, 0, 0,
+                      0, 0, 1, 0,
+                      0, 0, 0, 0;
 
-            R <<    0.1,    0,
-                    0,    100;
+            R <<  1,        0,
+                          0,    1;
         }
     };
     //路点结构体

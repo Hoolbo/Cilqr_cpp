@@ -46,49 +46,63 @@ BarrieInfo barrierFunction(double q1,double q2,double c,VectorXd dc){
     info.dd_b = q1*(q2*q2)*exp(q2*c)*(dc * dc.transpose());
     return info;
 }
-//系统模型
-State SystemModel::dynamics(const State& X, const Control& U){
+// 系统模型
+State SystemModel::dynamics(const State& X, const Control& U) {
     double x = X[0];
     double y = X[1];
     double theta = X[2];
     double gamma = X[3];
     double v = U[0];
     double gamma_dot = U[1];
+    double len = lr + lf * cos(gamma); // L = l_2 + l_1 * cos(gamma)
+    
     State X_next;
     X_next << 
-        x + cos(theta)*v*dt,
-        y + sin(theta)*v*dt,
-        theta + ((-sin(gamma)/this->len)*v +(-this->lr/this->len)*gamma_dot)*dt ,
-        gamma + gamma_dot * dt;
-    X_next(2) = angle_wrap(X_next(2));
+        x + dt * v * cos(theta),
+        y + dt * v * sin(theta),
+        theta - dt * (v * sin(gamma) + lr * gamma_dot) / len,
+        gamma + dt * gamma_dot;
+    
+    X_next(2) = angle_wrap(X_next(2)); // 保留角度规范化
     return X_next;
 }
 
-Matrix4d SystemModel::get_jacobian_state(const Vector4d& X, const Vector2d& U){
-    double phi = X(2);
-    double v = X(3);
-    double delta = U(1);
-    double beta = atan((lr / (lr + lf)) * tan(delta));
+Matrix4d SystemModel::get_jacobian_state(const Vector4d& X, const Vector2d& U) {
+    double theta = X[2];
+    double gamma = X[3];
+    double v = U[0];
+    double gamma_dot = U[1];
+    double len = lr + lf * cos(gamma); // L = l_2 + l_1 * cos(gamma)
+    
     Matrix4d df_dx;
-    df_dx << 1, 0, -v*sin(phi+beta)*dt,  cos(phi+beta)*dt,
-             0, 1,  v*cos(phi+beta)*dt,  sin(phi+beta)*dt,
-             0, 0,    1,  tan(delta)*cos(beta) * dt / len, 
-             0, 0,    0,                                1;
+    // 计算 theta_1,k+1 对 gamma_k 的偏导数
+    double num = v * cos(gamma) * (lr + lf * cos(gamma)) + (v * sin(gamma) + lr * gamma_dot) * (lf * sin(gamma));
+    double denom = len * len;
+    double dtheta_dgamma = -dt * num / denom;
+    
+    df_dx << 
+        1.0, 0.0, -dt * v * sin(theta), 0.0,
+        0.0, 1.0, dt * v * cos(theta), 0.0,
+        0.0, 0.0, 1.0, dtheta_dgamma,
+        0.0, 0.0, 0.0, 1.0;
+    
     return df_dx;
 }
-Matrix<double,4,2> SystemModel::get_jacobian_control(const Vector4d& X, const Vector2d& U){
-    double phi = X(2);
-    double v = X(3);
-    double delta = U(1);
-    double beta = atan((lr / (lr + lf)) * tan(delta));
-    double k = lr / (lr + lf); 
-    auto sec = [](double x) -> double { return 1 / cos(x); };
-    double dbeta_ddelta = k * sec(delta) * sec(delta) / (1 + k*k*tan(delta)*tan(delta));
-    Matrix<double,4,2> df_du;
-    df_du <<   0  ,                         -v*sin(phi+beta)*dbeta_ddelta * dt                           ,
-               0  ,                          v*cos(phi+beta)*dbeta_ddelta * dt                           ,
-               0  ,  (v/len) * dt * (sec(delta)*sec(delta)*cos(beta) - tan(delta)*sin(beta)*dbeta_ddelta),
-               dt ,                                             0                                        ;
+
+Matrix<double, 4, 2> SystemModel::get_jacobian_control(const Vector4d& X, const Vector2d& U) {
+    double theta = X[2];
+    double gamma = X[3];
+    double v = U[0];
+    double gamma_dot = U[1];
+    double len = lr + lf * cos(gamma); // L = l_2 + l_1 * cos(gamma)
+    
+    Matrix<double, 4, 2> df_du;
+    df_du << 
+        dt * cos(theta), 0.0,
+        dt * sin(theta), 0.0,
+        -dt * sin(gamma) / len, -dt * lr / len,
+        0.0, dt;
+    
     return df_du;
 }
 
