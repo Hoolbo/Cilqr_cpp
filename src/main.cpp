@@ -4,11 +4,28 @@
 #include <ctime>
 
 int main(){
+
+
     std::vector<Point> way_points;
     std::vector<std::vector<double>> global_plan_log(3),ego_log(4);
 
     //获取地图信息
     std::vector<std::vector<double>> m_map_info = load_map();
+
+    ///////////////////换道测试
+    std::vector<Point> way_points_lanechange;
+    std::vector<std::vector<double>> global_plan_lanechange_log(3);
+    GlobalPlan global_plan_lanechange;
+    
+    for(int i=300;i<1000;i++){
+        Point point(m_map_info[0][i],m_map_info[1][i]+2,m_map_info[2][i]);
+        way_points_lanechange.push_back(point);
+        global_plan_lanechange_log[0].push_back(m_map_info[0][i]);
+        global_plan_lanechange_log[1].push_back(m_map_info[1][i]+2);
+        global_plan_lanechange_log[2].push_back(m_map_info[2][i]);
+    }
+    global_plan_lanechange.set_plan(way_points_lanechange);
+    //////////////////换道测试
 
     //填充路点
     for(int i=300;i<1000;i++){
@@ -17,7 +34,6 @@ int main(){
         global_plan_log[0].push_back(m_map_info[0][i]);
         global_plan_log[1].push_back(m_map_info[1][i]);
         global_plan_log[2].push_back(m_map_info[2][i]);
-
     }
 
     // 设置全局路径
@@ -39,7 +55,7 @@ int main(){
     //障碍物初始化
     Trajectory obs_trj;
     for(int i=0;i<arg.N+1;i++){
-        obs_trj.push_back(State(380,1,0,0));
+        obs_trj.push_back(State(380,-1,0,0));
     }
 
     //求解器初始化
@@ -53,6 +69,10 @@ int main(){
     // for(int i = 0;i<arg.tf/arg.dt;i++){
     for(int i = 0;i<2000;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
+        if(i==100){
+            cilqr_solver.set_global_plan(global_plan_lanechange);
+            global_plan_log = global_plan_lanechange_log;
+        }
         // 问题求解
         clock_t start = clock();
         solution = cilqr_solver.solve(cur_state,obs_trj); 

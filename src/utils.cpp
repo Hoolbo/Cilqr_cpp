@@ -110,6 +110,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
                 "k-."
             ));
         }
+        global_plot->update(global_plan_log[0],global_plan_log[1]);
 
         
         double target_x = ego_log[0].back();

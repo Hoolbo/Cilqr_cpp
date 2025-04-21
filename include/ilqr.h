@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 10;
+        double desire_speed = 3;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
@@ -301,6 +301,9 @@
             //接口
 
             Solution solve(const State& init_state,const Trajectory& obs);
+            void set_global_plan(const GlobalPlan& global_plan){
+                ego.set_global_plan(global_plan);
+            }
 
     };
 #endif
