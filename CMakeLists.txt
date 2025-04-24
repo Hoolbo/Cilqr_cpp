@@ -5,8 +5,8 @@ project(Cilqr_cpp)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 查找 yaml-cpp
-find_package(yaml-cpp REQUIRED)
+ # 查找 yaml-cpp
+ # find_package(yaml-cpp REQUIRED)
 
 # 查找 Eigen3
 find_package(Eigen3 REQUIRED)
@@ -64,4 +64,4 @@ aux_source_directory(./src SRC_LIST)
 add_executable(main ${SRC_LIST})
 
 # 链接库
-target_link_libraries(main PRIVATE matplotlib_cpp yaml-cpp ${PYTHON_LIBRARY})
+target_link_libraries(main PRIVATE matplotlib_cpp  ${PYTHON_LIBRARY})
