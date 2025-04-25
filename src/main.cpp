@@ -83,7 +83,7 @@ int main(){
 
     //车辆模型初始化
     Vehicle ego;
-    ego.set_state(m_map_info[0][0],m_map_info[1][0],m_map_info[2][0],5);
+    ego.set_state(m_map_info[0][0],m_map_info[1][0],m_map_info[2][0],0);
     ego.set_global_plan(global_plan);
     ego.set_model(SystemModel(arg.dt,arg.N));
     for(int i=0;i<4;i++){
@@ -93,10 +93,16 @@ int main(){
     //障碍物初始化
     std::vector<Trajectory> total_obs_traj;
     std::vector<State> init_states;
-    init_states.push_back({35,0.5,0,2});
-    init_states.push_back({30,0,0,-1});
-    init_states.push_back({50,2,0,-2});
-    // init_states.push_back({50,-2,0,2});
+    //跟车
+    // init_states.push_back({70,0.5,0,2});
+    
+    //避障
+    // init_states.push_back({50,1,0,-2});
+    // init_states.push_back({80,-1,0,-1});
+    
+    //人行道让行
+    init_states.push_back({20,2,-M_PI/2,0.25});
+
     obs_traj_init(total_obs_traj,arg.N,init_states);
 
     //求解器初始化

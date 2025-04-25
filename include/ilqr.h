@@ -49,8 +49,8 @@
         double obs_q2 = 3;
         double obs_length = 2.7;
         double obs_width = 2;
-        double safe_a_buffer = 5;
-        double safe_b_buffer = 1.5;
+        double safe_a_buffer = 2;
+        double safe_b_buffer = 1;
         // double buff = 0;
         // double obs_rad = 1 + buff;
         //QR矩阵
@@ -60,9 +60,9 @@
         double ref_weight = 3;
         Arg() { // 在构造函数中初始化矩阵
             Q << 0, 0, 0, 0, 
-                     0, 0, 0, 0,
-                    0, 0, 1, 0,
-                     0, 0, 0, 1;
+                      0, 0, 0, 0,
+                      0, 0, 1, 0,
+                      0, 0, 0, 0.1;
 
             R <<    1,    0,
                         0,      100;
