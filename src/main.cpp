@@ -69,10 +69,10 @@ int main(){
     // for(int i = 0;i<arg.tf/arg.dt;i++){
     for(int i = 0;i<2000;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
-        if(i==100){
-            cilqr_solver.set_global_plan(global_plan_lanechange);
-            global_plan_log = global_plan_lanechange_log;
-        }
+        // if(i==100){
+        //     cilqr_solver.set_global_plan(global_plan_lanechange);
+        //     global_plan_log = global_plan_lanechange_log;
+        // }
         // 问题求解
         clock_t start = clock();
         solution = cilqr_solver.solve(cur_state,obs_trj); 

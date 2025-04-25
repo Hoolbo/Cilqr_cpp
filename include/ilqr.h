@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 3;
+        double desire_speed = 10;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
