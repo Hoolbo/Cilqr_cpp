@@ -95,7 +95,7 @@ Vehicle::Vehicle(){
 }
 
 //CILQRSolver类方法
-Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
+Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory>& obs) {
     
     ego.set_state(init_state);
     this->obs = obs;
@@ -338,12 +338,13 @@ double CILQRSolver::cal_cost(const Solution& solution){
         }
         //计算障碍物代价
         if(arg.if_cal_obs_cost){
-            //计算与障碍物的距离
-            if(i >= obs.get_states().size()){ // 添加长度检查
+            cost_obs = 0;
+            for(int j=0;j<obs.size();j++){
+                if(i >= obs[j].get_states().size()){ // 添加长度检查
                 std::cerr << "Obs trajectory error" << std::endl;
                 break;
-            }
-            State obs_state = obs.get_states()[i];
+                }
+            State obs_state = obs[j].get_states()[i];
             dx = X[0] - obs_state[0];  // Ego车与障碍物的x坐标差
             dy = X[1] - obs_state[1];  // Ego车与障碍物的y坐标差
             Vector2d dX_obs = {dx,dy};
@@ -354,15 +355,9 @@ double CILQRSolver::cal_cost(const Solution& solution){
                               -sin(obs_state[2]), cos(obs_state[2]);
             Vector2d dX_obs_cord =  rotation_matrix * dX_obs;
             c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2)+pow(dX_obs_cord[1],2)/pow(b,2));
-            cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
-            // dist = sqrt(dx * dx + dy * dy);       // 计算距离
-            
-            // //障碍物代价计算：若距离小于安全阈值，产生代价
-            // safe_distance = arg.obs_rad + ego.get_model().ego_rad; // 安全距离
-            // //c小于0满足约束  c大于0违反约束
-            // c = safe_distance - dist;   
-            // //返回代价
-            // cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
+            cost_obs += arg.obs_q1*exp(arg.obs_q2*c);
+            }
+
         } 
         J_obs_total += cost_obs;
         J_lane_total += cost_lane;
@@ -404,7 +399,7 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
     const auto& X_traj = solution.ego_trj.get_states();
     const auto& U = solution.control_sequence.get_control_sequence();
     const auto& local_plan = ego.get_local_plan().get_points();
-    const auto& obs_traj = obs.get_states();
+    const auto& total_obs_traj = obs;
     const int N = arg.N;
     State X;
     State X_r;
@@ -460,58 +455,47 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
         l_dx_ref = l_dx_ref * arg.ref_weight;
         l_ddx_ref = l_ddx_ref * arg.ref_weight;
 
-        if (arg.if_cal_obs_cost && i < obs_traj.size()) {
-            const State& obs_state = obs_traj[i];
-            double dx = X[0] - obs_state[0];
-            double dy = X[1] - obs_state[1];
-            double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-            double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-        
-            // 坐标变换到障碍物局部系
-            Vector2d dX_obs(dx, dy);
-            Matrix2d rotation_matrix;
-            rotation_matrix << cos(obs_state[2]),  sin(obs_state[2]), 
-                              -sin(obs_state[2]),  cos(obs_state[2]);
-            Vector2d dX_obs_cord = rotation_matrix * dX_obs;
-        
-            // 计算约束函数 c
-            double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-        
-            // 计算局部坐标系梯度
-            Vector2d grad_local(-2 * dX_obs_cord[0] / (a * a), 
-                               -2 * dX_obs_cord[1] / (b * b));
-        
-            // 转换到全局坐标系梯度
-            Matrix2d rotation_matrix_transpose = rotation_matrix.transpose();
-            Vector2d grad_global = rotation_matrix_transpose * grad_local;
-        
-            // 构建状态梯度向量
-            Vector4d c_dot;
-            c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
-        
-            // 后续处理（指数权重、截断等）
-            double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
-            db_obs = exp_term * c_dot;
-            ddb_obs = exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
+        //计算障碍相关导数
+        if (arg.if_cal_obs_cost) {
+            db_obs =  Vector4d::Zero();
+            ddb_obs =  Matrix4d::Zero();
+            for(int j=0;j<total_obs_traj.size();j++){
+                const State& obs_state =total_obs_traj[j].get_states()[i];
+                double dx = X[0] - obs_state[0];
+                double dy = X[1] - obs_state[1];
+                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
+                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
+            
+                // 坐标变换到障碍物局部系
+                Vector2d dX_obs(dx, dy);
+                Matrix2d rotation_matrix;
+                rotation_matrix << cos(obs_state[2]),  sin(obs_state[2]), 
+                                -sin(obs_state[2]),  cos(obs_state[2]);
+                Vector2d dX_obs_cord = rotation_matrix * dX_obs;
+            
+                // 计算约束函数 c
+                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+            
+                // 计算局部坐标系梯度
+                Vector2d grad_local(-2 * dX_obs_cord[0] / (a * a), 
+                                -2 * dX_obs_cord[1] / (b * b));
+            
+                // 转换到全局坐标系梯度
+                Matrix2d rotation_matrix_transpose = rotation_matrix.transpose();
+                Vector2d grad_global = rotation_matrix_transpose * grad_local;
+            
+                // 构建状态梯度向量
+                Vector4d c_dot;
+                c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
+            
+                // 后续处理（指数权重、截断等）
+                double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
+                db_obs += exp_term * c_dot;
+                ddb_obs += exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
+            }
         }
-            // double dist = std::hypot(dx, dy);
-            // double safe_dist = arg.obs_rad + ego.get_model().ego_rad;
-            
-            // if (dist < 1e-3) dist = 1e-3; // 避免除以零 
-            // Vector4d c_dot;
-            // c_dot << -dx/dist, -dy/dist, 0, 0;
-            
-            // double c = safe_dist - dist;
-            // double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
-            // db_obs = exp_term * c_dot;
-            // Matrix4d ddc;
-            // ddc << -1/dist,       0, 0, 0,
-            //              0, -1/dist, 0, 0,
-            //              0,       0, 0, 0,
-            //              0,       0, 0, 0;
-            // ddb_obs = exp_term * (arg.obs_q2 * c_dot * c_dot.transpose() + ddc);
-            // ddb_obs =  exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
 
+     
         // 车道保持代价导数
         Vector4d db_lane_total = Vector4d::Zero();
         Matrix4d ddb_lane_total = Matrix4d::Zero();

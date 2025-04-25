@@ -4,233 +4,199 @@
 std::vector<std::vector<double>> load_map(){
 
     std::vector<std::vector<double>> map_info(3);
-
-    // if (!mclInitializeApplication(nullptr, 0)) { // 必须最先调用
-    //     std::cerr << "Could not initialize MATLAB Runtime" << std::endl;
-    // }
-
-    // MATFile *pmatFile = matOpen("C:/Users/Hoolbo/Code/CILQR/Cilqr_cpp/map.mat", "r");
-    // if (!pmatFile) {
-    //     std::cerr << "Error: 无法打开map.mat文件" << std::endl;
-    // }
-
-    // mxArray *pMxArray = matGetVariable(pmatFile, "xcoord");
-    // if (!pMxArray) {
-    //     std::cerr << "Error: 文件内找不到变量xcoord" << std::endl;
-    //     matClose(pmatFile);
-    // }
-
-    // size_t M = mxGetM(pMxArray); // 行数[1](@ref)
-    // size_t N = mxGetN(pMxArray); // 列数
-    // double *data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
-
-    // for(int i=0;i<M;i++){
-    //     for(int j=0;j<N;j++){
-    //         map_info[0].push_back(data[i*N+j]);
-    //     }
-    // }
-
-    // pMxArray = matGetVariable(pmatFile, "ycoord");
-    // if (!pMxArray) {
-    //     std::cerr << "Error: 文件内找不到变量ycoord" << std::endl;
-    //     matClose(pmatFile);
-    // }
-
-    // M = mxGetM(pMxArray); // 行数[1](@ref)
-    // N = mxGetN(pMxArray); // 列数
-    // data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
-
-    // for(int i=0;i<M;i++){
-    //     for(int j=0;j<N;j++){
-    //         map_info[1].push_back(data[i*N+j]);
-    //     }
-    // }
-
-    // pMxArray = matGetVariable(pmatFile, "theta");
-    // if (!pMxArray) {
-    //     std::cerr << "Error: 文件内找不到变量theta" << std::endl;
-    //     matClose(pmatFile);
-    // }
-
-    // M = mxGetM(pMxArray); // 行数[1](@ref)
-    // N = mxGetN(pMxArray); // 列数
-    // data = (double*)mxGetData(pMxArray); // 数据指针[1,6](@ref)
-
-    // for(int i=0;i<M;i++){
-    //     for(int j=0;j<N;j++){
-    //         map_info[2].push_back(data[i*N+j]);
-    //     }
-    // }
-
-    //     mxDestroyArray(pMxArray);
-    //     matClose(pmatFile);
-
     //本来是用matlab导入地图，现在改成自己用正弦曲线拟合地图
     for(int i=0;i<1000;i++){
         map_info[0].push_back(i*1.0);
-        map_info[1].push_back(sin(i*1.0*0.0628));
-        map_info[2].push_back(atan2(sin(i*1.0*0.0628)-sin((i-1)*1.0*0.0628),1.0));
+        map_info[1].push_back(sin(i*1.0*0.00628));
+        map_info[2].push_back(atan2(sin(i*1.0*0.00628)-sin((i-1)*1.0*0.00628),1.0));
     } 
 
     return map_info;
 }
 
-
 void my_plot(const std::vector<std::vector<double>>& global_plan_log,
-    const std::vector<std::vector<double>>& ego_log,
-    const Trajectory& obs_traj,
-    const Solution& solution) 
+             const std::vector<std::vector<double>>& ego_log,
+             const std::vector<Trajectory>& total_obs_traj,
+             const Solution& solution) 
 {       
-        namespace plt = matplotlibcpp;
-        // 使用智能指针避免静态变量初始化问题
-        static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot,obs_traj_plot, 
-                                        trajectory_plot,vehicle_rect_plot;
+    namespace plt = matplotlibcpp;
+    // 静态绘图对象
+    static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot, trajectory_plot, vehicle_rect_plot;
+    static std::vector<std::unique_ptr<matplotlibcpp::Plot>> obs_traj_plots; // 障碍物矩形
+    static bool figure_initialized = false;
+    // 车辆和障碍物参数
+    constexpr double VEHICLE_LENGTH = 2.7;  // 车长（单位：米）
+    constexpr double VEHICLE_WIDTH = 2;     // 车宽
+    constexpr double OBS_LENGTH = 2.7;      // 障碍物长度
+    constexpr double OBS_WIDTH = 2;         // 障碍物宽度
+    // 动态视图参数
+    constexpr double FOLLOW_FACTOR = 0.7;
+    constexpr double BASE_MARGIN = 20.0;
+    static std::pair<double, double> view_center = {0, 0};
+
+    // 检查输入
+    if (total_obs_traj.empty()) {
+        std::cerr << "Warning: No obstacle trajectories to plot." << std::endl;
+    }
+
+    // 初始化图形窗口
+    if (!figure_initialized) {
+        figure_initialized = true;
+        plt::figure();
+        plt::title("CILQR PLANNING");
+        plt::xlabel("X (m)");
+        plt::ylabel("Y (m)");
+        plt::grid(true);
         
-        static bool figure_initialized = false;
-        constexpr double VEHICLE_LENGTH = 2.7;  // 车长（单位：米）
-        constexpr double VEHICLE_WIDTH = 2;   // 车宽
-        // 动态视图参数
-        constexpr double FOLLOW_FACTOR = 0.7;
-        constexpr double BASE_MARGIN = 20.0;
-        static std::pair<double, double> view_center = {0, 0};
+        global_plot.reset(new matplotlibcpp::Plot(
+            "global_plot",
+            global_plan_log[0], 
+            global_plan_log[1],
+            "k-."
+        ));
+    }
+    global_plot->update(global_plan_log[0], global_plan_log[1]);
 
-        // 首次初始化图形窗口
-        if (!figure_initialized) {
-            figure_initialized = true;
-            plt::figure();
-            plt::title("CILQR PLANNING");
-            plt::xlabel("X (m)");
-            plt::ylabel("Y (m)");
-            plt::grid(true);
-            
-            global_plot.reset(new matplotlibcpp::Plot(
-                "global_plot",
-                global_plan_log[0], 
-                global_plan_log[1],
-                "k-."
-            ));
+    // 动态调整视图中心
+    double target_x = ego_log[0].back();
+    double target_y = ego_log[1].back();
+    view_center.first += FOLLOW_FACTOR * (target_x - view_center.first);
+    view_center.second += FOLLOW_FACTOR * (target_y - view_center.second);
+    double speed = ego_log[3].back();
+    double margin = BASE_MARGIN + speed * 0;
+
+    // 更新规划轨迹
+    std::vector<std::vector<double>> trajectory(4);
+    for(size_t i = 0; i < solution.ego_trj.states.size(); ++i) {
+        trajectory[0].push_back(solution.ego_trj.states[i][0]);
+        trajectory[1].push_back(solution.ego_trj.states[i][1]);
+    }
+    if (!trajectory_plot) {
+        trajectory_plot.reset(new matplotlibcpp::Plot(
+            "trajectory_plot",
+            trajectory[0],
+            trajectory[1],
+            "g-"
+        ));
+    }
+    trajectory_plot->update(trajectory[0], trajectory[1]);
+
+    // 调整障碍物矩形绘图对象数量
+    if (obs_traj_plots.size() != total_obs_traj.size()) {
+        obs_traj_plots.clear();
+        obs_traj_plots.resize(total_obs_traj.size());
+    }
+
+    // 绘制障碍物矩形
+    for (size_t i = 0; i < total_obs_traj.size(); ++i) {
+        if (total_obs_traj[i].states.empty() || total_obs_traj[i].states[0].size() < 3) {
+            std::cerr << "Warning: Invalid obstacle trajectory " << i << ", skipping." << std::endl;
+            continue;
         }
-        global_plot->update(global_plan_log[0],global_plan_log[1]);
 
-        
-        double target_x = ego_log[0].back();
-        double target_y = ego_log[1].back();
-        view_center.first += FOLLOW_FACTOR * (target_x - view_center.first);
-        view_center.second += FOLLOW_FACTOR * (target_y - view_center.second);
-        double speed = ego_log[3].back();
-        double margin = BASE_MARGIN + speed * 3;
-
-
-
-        std::vector<std::vector<double>> trajectory(4);
-        for(int i=0;i<solution.ego_trj.states.size();i++){
-            trajectory[0].push_back(solution.ego_trj.states[i][0]);
-            trajectory[1].push_back(solution.ego_trj.states[i][1]);
+        // 检查障碍物是否在视图范围内
+        double obs_x = total_obs_traj[i].states[0][0];
+        double obs_y = total_obs_traj[i].states[0][1];
+        if (abs(obs_x - view_center.first) > margin || abs(obs_y - view_center.second) > margin) {
+            continue; // 跳过视图外的障碍物
         }
 
-        // 初始化并更新轨迹
-        if(!trajectory_plot){
-            trajectory_plot.reset(new matplotlibcpp::Plot(
-                "trajectory_plot",
-                trajectory[0],
-                trajectory[1],
-                "g-"
-            ));
-        }
-        trajectory_plot->update(trajectory[0],trajectory[1]);
-        
-        //绘制障碍物
-        double obs_x = obs_traj.states[0][0];
-        double obs_y = obs_traj.states[0][1];
-        double obs_theta = obs_traj.states[0][2]; 
+        // 计算障碍物矩形坐标
+        double obs_theta = total_obs_traj[i].states[0][2];
         std::vector<double> obs_rect_x, obs_rect_y;
         double obs_cos_theta = cos(obs_theta);
         double obs_sin_theta = sin(obs_theta);
-        double obs_half_length = 2.7 / 2;
-        double obs_half_width = 2 / 2;
+        double obs_half_length = OBS_LENGTH / 2;
+        double obs_half_width = OBS_WIDTH / 2;
         std::array<std::pair<double, double>, 4> obs_local_points = {
             std::make_pair( obs_half_length,  obs_half_width),  // 前右
             std::make_pair( obs_half_length, -obs_half_width),  // 后右
             std::make_pair(-obs_half_length, -obs_half_width),  // 后左
-            std::make_pair(-obs_half_length,  obs_half_width)   // 前左
+            std::make_pair(-obs_half_length,  obs_half_width)    // 前左
         };
         for (const auto& pt : obs_local_points) {
-            // 旋转和平移变换
-            double global_x = obs_x + pt.first * obs_cos_theta - pt.second *  obs_sin_theta;
-            double global_y = obs_y + pt.first *  obs_sin_theta + pt.second * obs_cos_theta;
+            double global_x = obs_x + pt.first * obs_cos_theta - pt.second * obs_sin_theta;
+            double global_y = obs_y + pt.first * obs_sin_theta + pt.second * obs_cos_theta;
             obs_rect_x.push_back(global_x);
             obs_rect_y.push_back(global_y);
         }
         obs_rect_x.push_back(obs_rect_x.front());
         obs_rect_y.push_back(obs_rect_y.front());
-        // 更新或创建绘图对象
-        if (!obs_traj_plot) {
-            obs_traj_plot.reset(new matplotlibcpp::Plot(
-                " ",
+
+        // 初始化或更新障碍物矩形绘图对象
+        if (!obs_traj_plots[i]) {
+            obs_traj_plots[i].reset(new matplotlibcpp::Plot(
+                "obs_rect_" + std::to_string(i),
                 obs_rect_x, 
                 obs_rect_y, 
                 "c-"
             ));
+        } else {
+            obs_traj_plots[i]->update(obs_rect_x, obs_rect_y);
         }
-        obs_traj_plot->update(obs_rect_x, obs_rect_y);
+    }
 
+    // 更新自车矩形
+    double x = ego_log[0].back();
+    double y = ego_log[1].back();
+    double theta = ego_log[2].back();
+    const double half_len = VEHICLE_LENGTH / 2;
+    const double half_wid = VEHICLE_WIDTH / 2;
+    std::array<std::pair<double, double>, 4> local_points = {
+        std::make_pair( half_len,  half_wid),  // 前右
+        std::make_pair( half_len, -half_wid),  // 后右
+        std::make_pair(-half_len, -half_wid),  // 后左
+        std::make_pair(-half_len,  half_wid)   // 前左
+    };
+    std::vector<double> rect_x, rect_y;
+    double cos_theta = cos(theta);
+    double sin_theta = sin(theta);
+    for (const auto& pt : local_points) {
+        double global_x = x + pt.first * cos_theta - pt.second * sin_theta;
+        double global_y = y + pt.first * sin_theta + pt.second * cos_theta;
+        rect_x.push_back(global_x);
+        rect_y.push_back(global_y);
+    }
+    rect_x.push_back(rect_x.front());
+    rect_y.push_back(rect_y.front()); // 修复之前的非法字符 rect_yउम्स
+    if (!vehicle_rect_plot) {
+        vehicle_rect_plot.reset(new matplotlibcpp::Plot(
+            "vehicle_rect",
+            rect_x, 
+            rect_y, 
+            "b-"
+        ));
+    }
+    vehicle_rect_plot->update(rect_x, rect_y);
 
-        // 更新车辆矩形
-        double x = ego_log[0].back();
-        double y = ego_log[1].back();
-        double theta = ego_log[2].back(); 
-        // 计算矩形四角相对坐标
-        const double half_len = VEHICLE_LENGTH / 2;
-        const double half_wid = VEHICLE_WIDTH / 2;
-        std::array<std::pair<double, double>, 4> local_points = {
-            std::make_pair( half_len,  half_wid),  // 前右
-            std::make_pair( half_len, -half_wid),  // 后右
-            std::make_pair(-half_len, -half_wid),  // 后左
-            std::make_pair(-half_len,  half_wid)   // 前左
-        };
-        // 坐标系变换
-        std::vector<double> rect_x, rect_y;
-        double cos_theta = cos(theta);
-        double sin_theta = sin(theta);
-        for (const auto& pt : local_points) {
-            // 旋转和平移变换
-            double global_x = x + pt.first * cos_theta - pt.second * sin_theta;
-            double global_y = y + pt.first * sin_theta + pt.second * cos_theta;
-            rect_x.push_back(global_x);
-            rect_y.push_back(global_y);
-        }
-        // 闭合矩形
-        rect_x.push_back(rect_x.front());
-        rect_y.push_back(rect_y.front());
-        // 更新或创建绘图对象
-        if (!vehicle_rect_plot) {
-            vehicle_rect_plot.reset(new matplotlibcpp::Plot(
-                " ",
-                rect_x, 
-                rect_y, 
-                "b-"
-            ));
-        }
-        vehicle_rect_plot->update(rect_x, rect_y);
-        
-        // 历史轨迹
-        if (!ego_plot){
-            ego_plot.reset(new matplotlibcpp::Plot(
-                "ego_plot",
-                ego_log[0],
-                ego_log[1],
-                "r-"
-            ));
-        } 
-        ego_plot->update(ego_log[0], ego_log[1]);
+    // 更新自车历史轨迹
+    if (!ego_plot) {
+        ego_plot.reset(new matplotlibcpp::Plot(
+            "ego_plot",
+            ego_log[0],
+            ego_log[1],
+            "r-"
+        ));
+    } 
+    ego_plot->update(ego_log[0], ego_log[1]);
 
-        // 非阻塞式刷新（关键参数）
-        // plt::backend("TkAgg");  // 使用更快的后端
-        // plt::ion();             // 启用交互模式
-        plt::xlim(view_center.first - margin, view_center.first + margin);
-        plt::ylim(view_center.second - margin, view_center.second + margin);
-        plt::grid(true);
-        matplotlibcpp::pause(0.02);  // 控制刷新频率
-        matplotlibcpp::draw();        // 强制立即绘制
-            
+    // 设置视图范围并刷新
+    // plt::xlim(view_center.first - margin, view_center.first + margin);
+    // plt::ylim(view_center.second - margin, view_center.second + margin);
+    static std::pair<double, double> last_xlim, last_ylim;
+    double new_xlim_min = view_center.first - margin;
+    double new_xlim_max = view_center.first + margin;
+    double new_ylim_min = view_center.second - margin;
+    double new_ylim_max = view_center.second + margin;
+    if (abs(new_xlim_min - last_xlim.first) > 0.1 || abs(new_xlim_max - last_xlim.second) > 0.1 ||
+        abs(new_ylim_min - last_ylim.first) > 0.1 || abs(new_ylim_max - last_ylim.second) > 0.1) {
+        plt::xlim(new_xlim_min, new_xlim_max);
+        plt::ylim(new_ylim_min, new_ylim_max);
+        last_xlim = {new_xlim_min, new_xlim_max};
+        last_ylim = {new_ylim_min, new_ylim_max};
+    }
+    plt::grid(true);
+    plt::pause(0.02); 
+   plt::draw();
+
 }

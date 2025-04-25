@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 10;
+        double desire_speed = 5;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
@@ -50,7 +50,7 @@
         double obs_length = 2.7;
         double obs_width = 2;
         double safe_a_buffer = 5;
-        double safe_b_buffer = 1;
+        double safe_b_buffer = 1.5;
         // double buff = 0;
         // double obs_rad = 1 + buff;
         //QR矩阵
@@ -59,13 +59,13 @@
         //横向偏移代价
         double ref_weight = 3;
         Arg() { // 在构造函数中初始化矩阵
-            Q << 0.01, 0, 0, 0, 
-                 0, 0.01, 0, 0,
-                 0, 0, 0, 0,
-                 0, 0, 0, 1;
+            Q << 0, 0, 0, 0, 
+                     0, 0, 0, 0,
+                    0, 0, 1, 0,
+                     0, 0, 0, 1;
 
-            R <<    0.1,    0,
-                    0,    100;
+            R <<    1,    0,
+                        0,      100;
         }
     };
     //路点结构体
@@ -250,8 +250,6 @@
         ControlSequence control_sequence;
     };
 
-
-
     class CILQRSolver{
         private:
             // double J_total = 0;
@@ -260,7 +258,7 @@
             bool converged = false;
             Solution pre_solution;
             Vehicle ego;
-            Trajectory obs;
+            std::vector<Trajectory> obs;
             Arg arg;
             
             std::vector<MatrixXd> k;
@@ -284,7 +282,7 @@
 
         public:
             //构造函数
-            CILQRSolver(const Vehicle& ego, const Trajectory& obs, const Arg& arg) 
+            CILQRSolver(const Vehicle& ego, const Arg& arg) 
             : ego(ego), obs(obs), arg(arg), 
             k(arg.N, Vector2d::Zero()),
             K(arg.N,MatrixXd::Zero(2,4)),
@@ -300,7 +298,7 @@
             
             //接口
 
-            Solution solve(const State& init_state,const Trajectory& obs);
+            Solution solve(const State& init_state,const std::vector<Trajectory>& obs);
             void set_global_plan(const GlobalPlan& global_plan){
                 ego.set_global_plan(global_plan);
             }
