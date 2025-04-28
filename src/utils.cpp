@@ -1,14 +1,24 @@
 #include "utils.h"
 
+double ploynomial(double x){
+    return 1*pow(x,5) + 5*pow(x,4)+10*pow(x,3);
+}
 
 std::vector<std::vector<double>> load_map(){
 
     std::vector<std::vector<double>> map_info(3);
     //本来是用matlab导入地图，现在改成自己用正弦曲线拟合地图
-    for(int i=0;i<1000;i++){
-        map_info[0].push_back(i*1.0);
-        map_info[1].push_back(sin(i*1.0*0.00628));
-        map_info[2].push_back(atan2(sin(i*1.0*0.00628)-sin((i-1)*1.0*0.00628),1.0));
+    double map_resolution = 0.1;
+    for(int i=0;i<3000;i++){
+        // map_info[0].push_back(i*map_resolution);
+        // map_info[1].push_back(sin(i*map_resolution*0.0628));
+        // map_info[2].push_back(atan2(sin(i*map_resolution*0.0628)-sin((i-1)*map_resolution*0.0628),map_resolution));？？
+        map_info[0].push_back(i*map_resolution);
+        map_info[1].push_back(sin(i*map_resolution*0.000628));
+        map_info[2].push_back(atan2(sin(i*map_resolution*0.000628)-sin((i-1)*map_resolution*0.000628),map_resolution));
+        // map_info[0].push_back(i*map_resolution);
+        // map_info[1].push_back(ploynomial(i*map_resolution*0.0628));
+        // map_info[2].push_back(atan2(ploynomial(i*map_resolution*0.0628)-ploynomial((i-1)*map_resolution*0.0628),map_resolution));
     } 
 
     return map_info;
@@ -17,7 +27,8 @@ std::vector<std::vector<double>> load_map(){
 void my_plot(const std::vector<std::vector<double>>& global_plan_log,
              const std::vector<std::vector<double>>& ego_log,
              const std::vector<Trajectory>& total_obs_traj,
-             const Solution& solution) 
+             const Solution& solution,
+             const Arg& arg) 
 {       
     namespace plt = matplotlibcpp;
     // 静态绘图对象
@@ -25,10 +36,10 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     static std::vector<std::unique_ptr<matplotlibcpp::Plot>> obs_traj_plots; // 障碍物矩形
     static bool figure_initialized = false;
     // 车辆和障碍物参数
-    constexpr double VEHICLE_LENGTH = 2.7;  // 车长（单位：米）
-    constexpr double VEHICLE_WIDTH = 2;     // 车宽
-    constexpr double OBS_LENGTH = 2.7;      // 障碍物长度
-    constexpr double OBS_WIDTH = 2;         // 障碍物宽度
+    double VEHICLE_LENGTH = arg.len;  // 车长（单位：米）
+    double VEHICLE_WIDTH = arg.width;     // 车宽
+    double OBS_LENGTH = arg.obs_length;      // 障碍物长度
+    double OBS_WIDTH = arg.obs_width;         // 障碍物宽度
     // 动态视图参数
     constexpr double FOLLOW_FACTOR = 0.7;
     constexpr double BASE_MARGIN = 20.0;
@@ -42,6 +53,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     // 初始化图形窗口
     if (!figure_initialized) {
         figure_initialized = true;
+        plt::ion();
         plt::figure();
         plt::title("CILQR PLANNING");
         plt::xlabel("X (m)");
@@ -54,6 +66,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
             global_plan_log[1],
             "k-."
         ));
+        plt::axis("equal");
     }
     global_plot->update(global_plan_log[0], global_plan_log[1]);
 
@@ -97,7 +110,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         // 检查障碍物是否在视图范围内
         double obs_x = total_obs_traj[i].states[0][0];
         double obs_y = total_obs_traj[i].states[0][1];
-        if (abs(obs_x - view_center.first) > margin || abs(obs_y - view_center.second) > margin) {
+        if (abs(obs_x - view_center.first) > margin + 20 || abs(obs_y - view_center.second) > margin + 20) {
             continue; // 跳过视图外的障碍物
         }
 
@@ -196,7 +209,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         last_ylim = {new_ylim_min, new_ylim_max};
     }
     plt::grid(true);
-    plt::pause(0.02); 
+    plt::pause(0.001); 
    plt::draw();
 
 }

@@ -2,21 +2,29 @@
     #define ILQR_H 
     #include <Eigen/Eigen>
     #include <algorithm>
+    #include <cmath>
     using namespace Eigen;
     // #define M_PI 3.1415
     typedef Vector4d State;
     typedef Vector2d Control;
 
     struct Arg{
+        double following_distance = 10;
+        //车辆参数
+        double ego_rad = 3;
+        double lf      = 1.6;
+        double lr      =  1.13;
+        double len       =  2.73;
+        double width   =  2;
         // 仿真参数
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 80; //Horizen
+        int N = 20; //Horizen
         double tol = 1e-3;
         double rel_tol = 1e-5;
         int max_iter = 50;
-        double lamb_init = 1e-2;
+        double lamb_init = 1;
         double lamb_factor = 2;
         double lamb_max = 100;
         //纯跟踪参数
@@ -26,7 +34,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 5;
+        double desire_speed = 10;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = true;
@@ -43,14 +51,14 @@
         double trace_safe_width_left = 4;
         double trace_safe_width_right = 4;
         double lane_q1 = 5;
-        double lane_q2 = 3;
+        double lane_q2 = 5;
         //障碍约束
         double obs_q1 = 5;
-        double obs_q2 = 3;
-        double obs_length = 2.7;
-        double obs_width = 2;
+        double obs_q2 = 5;
+        double obs_length = 2;
+        double obs_width = 1;
         double safe_a_buffer = 2;
-        double safe_b_buffer = 1;
+        double safe_b_buffer = 0.5;
         // double buff = 0;
         // double obs_rad = 1 + buff;
         //QR矩阵
@@ -62,7 +70,7 @@
             Q << 0, 0, 0, 0, 
                       0, 0, 0, 0,
                       0, 0, 1, 0,
-                      0, 0, 0, 0.1;
+                      0, 0, 0, 1;
 
             R <<    1,    0,
                         0,      100;
@@ -91,9 +99,24 @@
 
 
     //计算两点之间距离
-    inline double distance(const Point& p1, const Point& p2);
+    inline double distance(const Point& p1, const Point& p2){
+        return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+    }
     //找到路径中离自车最短距离的点
-    inline size_t find_closest_point(const std::vector<Point>& path,const State& state);
+    inline size_t find_closest_point(const std::vector<Point>& path,const State& state){
+        size_t nearest_index = 0;
+        double min_distance =   std::numeric_limits<double>::max();
+         Point point = {state(0), state(1),0};
+         for (size_t i = 0; i < path.size(); ++i) {
+
+        double dist = distance(path[i], point);
+        if (dist < min_distance) {
+            min_distance = dist;
+            nearest_index = i;
+        }
+    }
+    return nearest_index;
+    }
     //角度归一化到[-π, π]
     inline double angle_wrap(double theta) {
         theta = fmod(theta + M_PI, 2.0*M_PI); 
@@ -130,7 +153,7 @@
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 2;
+            double ego_rad = 3;
             double lf      = 1.6;
             double lr      =  1.13;
             double len       =  2.73;
@@ -178,6 +201,27 @@
                 size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),0.0) + 20);
                 this->local_plan.set_plan(this->global_plan,this->state,num_points_to_extract);
             };
+            void set_local_plan_following(State target_state,double following_distance){
+                const std::vector<Point>& global_points = global_plan.get_points();
+                if (global_points.empty()) {
+                        this->local_plan.set_plan(global_plan, this->state, 0);
+                        return;
+                    }
+                    size_t obs_index = find_closest_point(global_points, target_state);
+                    size_t target_index = obs_index;
+                    while (distance(global_points[obs_index], global_points[target_index]) < following_distance) {
+                        if (target_index == 0) break;
+                        target_index--;
+                    }
+                    size_t ego_index = find_closest_point(global_points, this->state);
+                    size_t num_points_to_extract;
+                    if (target_index >  ego_index) {
+                        num_points_to_extract = target_index - ego_index;
+                    } else {
+                        num_points_to_extract = 1; // 反向跟随
+                    }
+                    this->local_plan.set_plan(this->global_plan, this->state, num_points_to_extract);
+            }
             LocalPlan get_local_plan(){
                 return this->local_plan;
             };
@@ -298,7 +342,7 @@
             
             //接口
 
-            Solution solve(const State& init_state,const std::vector<Trajectory>& obs);
+            Solution solve(const State& init_state,const std::vector<Trajectory>& obs,bool is_following);
             void set_global_plan(const GlobalPlan& global_plan){
                 ego.set_global_plan(global_plan);
             }

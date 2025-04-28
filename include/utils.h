@@ -9,7 +9,8 @@
 void my_plot(const std::vector<std::vector<double>>& global_plan_log,
              const std::vector<std::vector<double>>& ego_log,
              const std::vector<Trajectory>& total_obs_traj,
-             const Solution& solution);
+             const Solution& solution,
+             const Arg& arg);
 
 std::vector<std::vector<double>> load_map();    
 

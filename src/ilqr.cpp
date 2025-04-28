@@ -3,23 +3,23 @@
 #include "ilqr.h"
 using namespace Eigen;
 //计算两点之间的距离
-double distance(const Point& p1, const Point& p2) {
-    return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
-};
-size_t find_closest_point(const std::vector<Point>& path,const State& state){
-    size_t nearest_index = 0;
-    double min_distance = std::numeric_limits<double>::max();
-    Point point = {state(0), state(1),0};
-    for (size_t i = 0; i < path.size(); ++i) {
+// double distance(const Point& p1, const Point& p2) {
+//     return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+// };
+// size_t find_closest_point(const std::vector<Point>& path,const State& state){
+//     size_t nearest_index = 0;
+//     double min_distance = std::numeric_limits<double>::max();
+//     Point point = {state(0), state(1),0};
+//     for (size_t i = 0; i < path.size(); ++i) {
 
-        double dist = distance(path[i], point);
-        if (dist < min_distance) {
-            min_distance = dist;
-            nearest_index = i;
-        }
-    }
-    return nearest_index;
-}
+//         double dist = distance(path[i], point);
+//         if (dist < min_distance) {
+//             min_distance = dist;
+//             nearest_index = i;
+//         }
+//     }
+//     return nearest_index;
+// }
 void LocalPlan::set_plan(const GlobalPlan& global_plan,const State& vehicle_state,size_t num_points_to_extract){
 
     const std::vector<Point>& global_points = global_plan.get_points();
@@ -95,19 +95,27 @@ Vehicle::Vehicle(){
 }
 
 //CILQRSolver类方法
-Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory>& obs) {
+Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory>& obs,bool is_following) {
     
     ego.set_state(init_state);
     this->obs = obs;
     // 初始化局部路径和初始解
-    ego.set_local_plan();
+    if(is_following){
+        State target_state = obs[0].get_states()[0];
+        double following_distance = arg.following_distance;
+        ego.set_local_plan_following(target_state,following_distance);
+    }
+    else{
+        ego.set_local_plan();
+    }
+
 
     //如果接近终点就把期望速度置0
     Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/3];
     Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
     if(local_middle_point == global_last_point){
         arg.desire_speed = 0;
-        arg.desire_heading = 0;
+        // arg.desire_heading = 0;
         // arg.Q(3,3) = 0;
     }
 
