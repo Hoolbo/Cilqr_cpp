@@ -262,9 +262,9 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
             case following:
                 is_following = true;
                 arg.N = 30;
-                arg.desire_speed = 5;
-                arg.following_distance =20;
-                init_states.push_back({50,0,0,2});
+                arg.desire_speed = 10;
+                arg.following_distance =10;
+                init_states.push_back({30,0,0,5});
         arg.Q <<  1, 0, 0, 0, 
                             0, 1, 0, 0,
                             0, 0, 1, 0,
@@ -278,23 +278,18 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
 }
 
 int main(){
+     scenario scenario_type;
     //----------------- 可选择的scenario类型-----------------------
-    // custom,                                         //在ilqr.h里面自定义场景
-    // dynamic_collision_avoid,    //动态避障
-    // dense_static_obstacle,         //密集静态障碍物避障
-    // narror_corridor,                       //窄通道同行
-    // following                                     //跟车行驶
-    scenario scenario_type;
-    // scenario_type = custom;
-    // scenario_type = dynamic_collision_avoid;
-    // scenario_type = dense_static_obstacle;
-    // scenario_type = narror_corridor;
-    scenario_type = following;
-    bool is_following = false;
+    // scenario_type = custom;                                      //在ilqr.h里面自定义场景
+    scenario_type = dynamic_collision_avoid;      //动态避障
+    // scenario_type = dense_static_obstacle;       //密集静态障碍物避障
+    // scenario_type = narror_corridor;                     //窄通道同行
+    // scenario_type = following;                                  //跟车行驶
+
 
     //参数初始化
     Arg arg;
-
+    bool is_following = false;
     //障碍物初始化
     std::vector<Trajectory> total_obs_traj;
     std::vector<State> init_states;
@@ -308,13 +303,23 @@ int main(){
 
     //填充路点
     for(int i=0;i<m_map_info[0].size();i++){
-        Point point(m_map_info[0][i],m_map_info[1][i],m_map_info[2][i]);
-        way_points.push_back(point);
-        global_plan_log[0].push_back(m_map_info[0][i]);
-        global_plan_log[1].push_back(m_map_info[1][i]);
-        global_plan_log[2].push_back(m_map_info[2][i]);
-    }
+        double x,y,heading;
+        if(scenario_type == following){
+            x = m_map_info[0][i];
+            y = 0;
+            heading = 0;
+        }else{
+            x = m_map_info[0][i];
+            y = m_map_info[1][i];
+            heading = m_map_info[2][i];
+        }
 
+        Point point(x,y,heading);
+        way_points.push_back(point);
+        global_plan_log[0].push_back(x);
+        global_plan_log[1].push_back(y);
+        global_plan_log[2].push_back(heading);
+    }
     // 设置全局路径
     GlobalPlan global_plan;
     global_plan.set_plan(way_points);

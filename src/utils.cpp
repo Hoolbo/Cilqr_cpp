@@ -10,12 +10,12 @@ std::vector<std::vector<double>> load_map(){
     //本来是用matlab导入地图，现在改成自己用正弦曲线拟合地图
     double map_resolution = 0.1;
     for(int i=0;i<3000;i++){
-        // map_info[0].push_back(i*map_resolution);
-        // map_info[1].push_back(sin(i*map_resolution*0.0628));
-        // map_info[2].push_back(atan2(sin(i*map_resolution*0.0628)-sin((i-1)*map_resolution*0.0628),map_resolution));？？
         map_info[0].push_back(i*map_resolution);
-        map_info[1].push_back(sin(i*map_resolution*0.000628));
-        map_info[2].push_back(atan2(sin(i*map_resolution*0.000628)-sin((i-1)*map_resolution*0.000628),map_resolution));
+        map_info[1].push_back(sin(i*map_resolution*0.0628));
+        map_info[2].push_back(atan2(sin(i*map_resolution*0.0628)-sin((i-1)*map_resolution*0.0628),map_resolution));
+        // map_info[0].push_back(i*map_resolution);
+        // map_info[1].push_back(sin(i*map_resolution*0.000628));
+        // map_info[2].push_back(atan2(sin(i*map_resolution*0.000628)-sin((i-1)*map_resolution*0.000628),map_resolution));
         // map_info[0].push_back(i*map_resolution);
         // map_info[1].push_back(ploynomial(i*map_resolution*0.0628));
         // map_info[2].push_back(atan2(ploynomial(i*map_resolution*0.0628)-ploynomial((i-1)*map_resolution*0.0628),map_resolution));
