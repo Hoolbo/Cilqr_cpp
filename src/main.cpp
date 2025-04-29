@@ -1,368 +1,266 @@
 ﻿#include <iostream>
+#include <vector>
+#include <ctime>
 #include "ilqr.h"
 #include "utils.h"
-#include <ctime>
 
-enum scenario{
-    custom,                                         //在ilqr.h里面自定义场景
-    dynamic_collision_avoid,    //动态避障
-    dense_static_obstacle,         //密集静态障碍物避障
-    narror_corridor,                       //窄通道同行
-    following                                     //跟车行驶
+enum Scenario {
+// 在ilqr.h中自定义场景
+    CUSTOM,            
+// 动态避障         
+    DYNAMIC_COLLISION_AVOID,  
+// 密集静态障碍物避障 
+    DENSE_STATIC_OBSTACLE, 
+// 窄通道通行    
+    NARROW_CORRIDOR,      
+// 跟车行驶     
+    FOLLOWING                   
 };
 
-void obs_traj_init(std::vector<Trajectory>& total_obs_traj,int N,std::vector<State> init_states){
-    int obs_num = init_states.size();
-    total_obs_traj.resize(obs_num);
-    for(int i=0;i<obs_num;i++){
-        total_obs_traj[i].states.push_back(init_states[i]);
+// 设置默认车辆和仿真参数
+void set_default_params(Arg& arg) {
+    arg.is_following = false;
+    arg.following_distance = 20;
+    // 车辆参数
+    arg.ego_rad = 3;
+    arg.lf = 1.45;
+    arg.lr = 1.45;
+    arg.len = 4.8;
+    arg.width = 2.25;
+
+    // 仿真参数
+    arg.tf = 1000;
+    arg.dt = 0.1;
+
+    // CILQR参数
+    arg.N = 80;
+    arg.tol = 1e-3;
+    arg.max_iter = 5000;
+    arg.lamb_init = 1;
+    arg.lamb_factor = 2;
+    arg.lamb_max = 100;
+
+    // 纯跟踪参数
+    arg.kv = 0.3;
+    arg.kp = 0.8;
+    arg.ld0 = 3;
+    arg.ld_min = 3;
+    arg.ld_max = 20;
+
+    // 代价参数
+    arg.desire_speed = 5;
+    arg.desire_heading = 0;
+    arg.if_cal_obs_cost = true;
+    arg.if_cal_lane_cost = false;
+    arg.if_cal_steer_cost = true;
+
+    // 转向约束
+    arg.steer_angle_max = 1;
+    arg.steer_max_q1 = 1;
+    arg.steer_max_q2 = 1;
+    arg.steer_angle_min = -1;
+    arg.steer_min_q1 = 1;
+    arg.steer_min_q2 = 1;
+
+    // 道路约束
+    arg.trace_safe_width_left = 4;
+    arg.trace_safe_width_right = 4;
+    arg.lane_q1 = 100;
+    arg.lane_q2 = 14;
+
+    // 障碍约束
+    arg.obs_q1 = 1000;
+    arg.obs_q2 = 14;
+    arg.obs_length = 2;
+    arg.obs_width = 1;
+    arg.safe_a_buffer = 1;
+    arg.safe_b_buffer = 0.5;
+
+    // 横向偏移代价       
+    arg.ref_weight = 3;
+    arg.Q << 0, 0, 0, 0,
+             0, 0, 0, 0,
+             0, 0, 1, 0,
+             0, 0, 0, 1;
+    arg.R << 1, 0,
+             0, 100;
+}
+
+// 场景配置结构体
+struct ScenarioConfig {
+    std::vector<State> init_states;
+    Arg arg;
+};
+
+// 配置场景
+ScenarioConfig configure_scenario(Scenario type) {
+    ScenarioConfig config;
+    set_default_params(config.arg);
+
+    switch (type) {
+        case DYNAMIC_COLLISION_AVOID:
+            config.init_states = {
+                {80, 0.5, 0, 2}, {50, 2, 0, 1}, {70, -2, 0, 1},
+                {50, 2, 0, 0}, {70, -2, 0, 0}, {90, 2, 0, 5},
+                {110, -2, 0, 2}, {30, 2, -M_PI/2, 1}, {70, -2, M_PI/2, 0.5}
+            };
+            config.arg.desire_speed = 10;
+            break;
+
+        case DENSE_STATIC_OBSTACLE:
+            config.init_states = {
+                {30, 1, 0, 0}, {45, 2, 0, 0}, {60, -2, 0, 0},
+                {70, 2, 0, 0}, {90, -2, 0, 0}, {95, 3, 0, 0},
+                {100, 2, -M_PI/4, 0}, {110, -2, M_PI/4, 0},
+                {125,2,0,0},{130, 2, 0, 0}, {135,2,0,0},{140, 2, 0, 0}, {145,2,0,0},{145, -2, 0, 0}
+            };
+            config.arg.N = 80;
+            config.arg.desire_speed = 10;
+            break;
+
+        case NARROW_CORRIDOR:
+            config.init_states = {
+                {50, 3.5, 0, 0}, {50, -3.5, 0, 0}, {70, 2, -M_PI/32, 0},
+                {70, -4, -M_PI/32, 0}, {90, 2.5, M_PI/32, 0}, {90, -4, M_PI/32, 0},
+                {110, 4, M_PI/64, 0}, {110, -2.5, M_PI/50, 0}
+            };
+            config.arg.obs_length = 20;
+            config.arg.obs_width = 2;
+            config.arg.safe_a_buffer = 0;
+            config.arg.safe_b_buffer = 1;
+            break;
+
+        case FOLLOWING:
+            config.init_states = {{30, 0, 0, 5}};
+            config.arg.is_following = true;
+            config.arg.following_distance = 10;
+            config.arg.Q << 1, 0, 0, 0,
+                                            0, 1, 0, 0,
+                                            0, 0, 1, 0,
+                                            0, 0, 0, 1;
+            break;
+	case CUSTOM:
+	    config.arg.obs_length = 2;
+	    config.arg.obs_width = 100;
+	    config.init_states = {{50,0, 0, 0}};
+
+	    break;
+
+        default:
+            config.init_states = {{50, 0.5, 0, 1}};
+            break;
+    }
+    return config;
+}
+
+// 初始化障碍物轨迹
+void init_obstacle_trajectories(std::vector<Trajectory>& trajectories, int horizon, const std::vector<State>& init_states) {
+    trajectories.resize(init_states.size());
+    for (size_t i = 0; i < init_states.size(); ++i) {
+        trajectories[i].states.push_back(init_states[i]);
     }
 }
 
-State obs_dynamic(const State& X,const Control& U){
-        double lr = 1.13;
-        double lf = 1.6;
-        double len = lr + lf;
-        double beta = atan((lr / (lr + lf)) * tan(U[1]));
-        double dt = 0.1;
-        State X_next;
-        X_next << 
-        X[0] + X[3] * cos(X[2] + beta) * dt,
-        X[1] + X[3] * sin(X[2] + beta) * dt,
-        X[2] + (X[3] / len) * tan(U[1]) * cos(beta) * dt,
-        X[3] + U[0] * dt;
-    X_next(2) = angle_wrap(X_next(2));
-    return X_next;
+// 障碍物动态模型
+State obstacle_dynamics(const State& state, const Control& control) {
+    const double lr = 1.13, lf = 1.6, len = lr + lf, dt = 0.1;
+    double beta = atan((lr / len) * tan(control[1]));
+    State next_state;
+    next_state << 
+        state[0] + state[3] * cos(state[2] + beta) * dt,
+        state[1] + state[3] * sin(state[2] + beta) * dt,
+        state[2] + (state[3] / len) * tan(control[1]) * cos(beta) * dt,
+        state[3] + control[0] * dt;
+    next_state(2) = angle_wrap(next_state(2));
+    return next_state;
 }
 
-void update_obs_traj(std::vector<Trajectory>& total_obs_traj,int N){
-    if(total_obs_traj.size()==0) return;
-    Control U;
-    U<<0,0;
-    for(int i=0;i<total_obs_traj.size();i++){
-        State X = total_obs_traj[i].get_states()[0];
-        total_obs_traj[i].states.clear();
-        for(int j=0;j<N+1;j++){
-            State Xnew = obs_dynamic(X,U);
-            total_obs_traj[i].push_back(Xnew);
-            X = Xnew;
+// 更新障碍物轨迹
+void update_obstacle_trajectories(std::vector<Trajectory>& trajectories, int horizon) {
+    if (trajectories.empty()) return;
+    Control control = {0, 0};
+    for (auto& traj : trajectories) {
+        State state = traj.get_states()[0];
+        traj.states.clear();
+        for (int j = 0; j <= horizon; ++j) {
+            state = obstacle_dynamics(state, control);
+            traj.push_back(state);
         }
     }
 }
 
-void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg& arg,bool& is_following){
-        switch (scenario_type)
-    {
-        case dynamic_collision_avoid:
-                init_states.push_back({80,0.5,0,2});
-                init_states.push_back({50,2,0,1});
-                init_states.push_back({70,-2,0,1});
-                init_states.push_back({50,2,0,0});
-                init_states.push_back({70,-2,0,0});
-                init_states.push_back({90,2,0,5});
-                init_states.push_back({110,-2,0,2});
-                init_states.push_back({30,2,-M_PI/2,1});
-                init_states.push_back({70,-2,M_PI/2,0.5});
-                //车辆参数
-                arg.ego_rad = 3;
-                arg.lf      = 1.6;
-                arg.lr      =  1.13;
-                arg.len       =  2.73;
-                arg.width   =  2;
-                // 仿真参数
-                arg.tf = 1000;
-                arg.dt = 0.1;
-                //CILQR参数
-                arg.N = 20; //Horizen
-                arg.tol = 1e-3;
-                arg.max_iter = 50;
-                arg.lamb_init = 1;
-                arg.lamb_factor = 2;
-                arg.lamb_max = 100;
-		// 纯跟踪参数
-		arg.kv = 0.3; //前视距离系数
-                arg.kp = 0.8; //速度P控制器系数
-                arg.ld0 = 3;  //基础前瞻距离
-		arg.ld_min = 3;
-		arg.ld_max = 20;
-                //代价参数
-                arg.desire_speed = 10;
-                arg.desire_heading = 0;
-                arg.if_cal_obs_cost = true;
-                arg.if_cal_lane_cost = true;
-                arg.if_cal_steer_cost = true;
-                //最大转向约束
-                arg.steer_angle_max = 1;
-                arg.steer_max_q1 = 1;
-                arg.steer_max_q2 = 1;
-                //最小转向约束
-                arg.steer_angle_min = -1;
-                arg.steer_min_q1 = 1;
-                arg.steer_min_q2 = 1;
-                //道路约束
-                arg.trace_safe_width_left = 4;
-                arg.trace_safe_width_right = 4;
-                arg.lane_q1 = 5;
-                arg.lane_q2 = 5;
-                //障碍约束
-                arg.obs_q1 = 5;
-                arg.obs_q2 = 5;
-                arg.obs_length = 2;
-                arg.obs_width = 1;
-                arg.safe_a_buffer = 2;
-                arg.safe_b_buffer = 0.5;
-                //横向偏移代价
-                arg.ref_weight = 3;
-                arg.Q << 0, 0, 0, 0, 
-                            0, 0, 0, 0,
-                            0, 0, 1, 0,
-                            0, 0, 0, 1;
-                arg.R <<    1,    0,
-                                0,      100;
-            break;
+// 主函数
+int main() {
+    Scenario scenario_type = Scenario::NARROW_CORRIDOR; // 可选场景
 
-            case dense_static_obstacle:
-                init_states.push_back({30,1,0,0});
-                init_states.push_back({40,2,0,0});
-                init_states.push_back({50,-2,0,0});
-                init_states.push_back({60,2,0,0});
-                init_states.push_back({70,-2,0,0});
-                init_states.push_back({80,3,0,0});
-                init_states.push_back({90,-2,0,0});
-                init_states.push_back({100,2,-M_PI/4,0});
-                init_states.push_back({110, -2,M_PI/4,0});
-                //车辆参数
-                arg.ego_rad = 3;
-                arg.lf      = 1.6;
-                arg.lr      =  1.13;
-                arg.len       =  2.73;
-                arg.width   =  2;
-                // 仿真参数
-                arg.tf = 1000;
-                arg.dt = 0.1;
-                //CILQR参数
-                arg.N = 10; //Horizen
-                arg.tol = 1e-3;
-                arg.max_iter = 50;
-                arg.lamb_init = 1;
-                arg.lamb_factor = 2;
-                arg.lamb_max = 100;
-                //纯跟踪参数
-                arg.kv = 0.3; //前视距离系数
-                arg.kp = 0.8; //速度P控制器系数
-                arg.ld0 = 3;  //基础前瞻距离
-                arg.ld_min = 3;
-                arg.ld_max = 20;
-                //代价参数
-                arg.desire_speed = 10;
-                arg.desire_heading = 0;
-                arg.if_cal_obs_cost = true;
-                arg.if_cal_lane_cost = true;
-                arg.if_cal_steer_cost = true;
-                //最大转向约束
-                arg.steer_angle_max = 1;
-                arg.steer_max_q1 = 1;
-                arg.steer_max_q2 = 1;
-                //最小转向约束
-                arg.steer_angle_min = -1;
-                arg.steer_min_q1 = 1;
-                arg.steer_min_q2 = 1;
-                //道路约束
-                arg.trace_safe_width_left = 4;
-                arg.trace_safe_width_right = 4;
-                arg.lane_q1 = 5;
-                arg.lane_q2 = 5;
-                //障碍约束
-                arg.obs_q1 = 5;
-                arg.obs_q2 = 5;
-                arg.obs_length = 2;
-                arg.obs_width = 1;
-                arg.safe_a_buffer = 2;
-                arg.safe_b_buffer = 0.5;
-                //横向偏移代价
-                arg.ref_weight = 3;
-                arg.Q << 0, 0, 0, 0, 
-                            0, 0, 0, 0,
-                            0, 0, 1, 0,
-                            0, 0, 0, 1;
-                arg.R <<    1,    0,
-                                0,      100;
-            break;
+    // 初始化参数和障碍物
+    ScenarioConfig config = configure_scenario(scenario_type);
+    std::vector<Trajectory> obstacle_trajectories;
+    init_obstacle_trajectories(obstacle_trajectories, config.arg.N, config.init_states);
 
-            case narror_corridor:
-                init_states.push_back({50,   3,0,0});
-                init_states.push_back({50, -3,0,0});
-                init_states.push_back({70,   2, -M_PI/32,0});
-                init_states.push_back({70, -4,  -M_PI/32,0});
-                init_states.push_back({90,   2.5, M_PI/32,0});
-                init_states.push_back({90, -4,  M_PI/32,0});
-                init_states.push_back({110,   4, M_PI/64,0});
-                init_states.push_back({110, -2.5,  M_PI/50,0});
-                //车辆参数
-                arg.ego_rad = 3;
-                arg.lf      = 1.6;
-                arg.lr      =  1.13;
-                arg.len       =  2.73;
-                arg.width   =  2;
-                // 仿真参数
-                arg.tf = 1000;
-                arg.dt = 0.1;
-                //CILQR参数
-                arg.N = 50; //Horizen
-                arg.tol = 1e-3;
-                arg.max_iter = 50;
-                arg.lamb_init = 1;
-                arg.lamb_factor = 2;
-                arg.lamb_max = 100;
-                //纯跟踪参数
-                arg.kv = 0.3; //前视距离系数
-                arg.kp = 0.8; //速度P控制器系数
-                arg.ld0 = 3;  //基础前瞻距离
-                arg.ld_min = 3;
-                arg.ld_max = 20;
-                //代价参数
-                arg.desire_speed = 10;
-                arg.desire_heading = 0;
-                arg.if_cal_obs_cost = true;
-                arg.if_cal_lane_cost = true;
-                arg.if_cal_steer_cost = true;
-                //最大转向约束
-                arg.steer_angle_max = 1;
-                arg.steer_max_q1 = 1;
-                arg.steer_max_q2 = 1;
-                //最小转向约束
-                arg.steer_angle_min = -1;
-                arg.steer_min_q1 = 1;
-                arg.steer_min_q2 = 1;
-                //道路约束
-                arg.trace_safe_width_left = 4;
-                arg.trace_safe_width_right = 4;
-                arg.lane_q1 = 5;
-                arg.lane_q2 = 5;
-                //障碍约束
-                arg.obs_q1 = 5;
-                arg.obs_q2 = 5;
-                arg.obs_length = 20;
-                arg.obs_width = 2;
-                arg.safe_a_buffer = 0;
-                arg.safe_b_buffer = 1;
-                //横向偏移代价
-                arg.ref_weight = 3;
-                arg.Q << 0, 0, 0, 0, 
-                            0, 0, 0, 0,
-                            0, 0, 1, 0,
-                            0, 0, 0, 1;
-                arg.R <<    1,    0,
-                                0,      100;
-            break;
-
-            case following:
-                is_following = true;
-                arg.N = 30;
-                arg.desire_speed = 10;
-                arg.following_distance =10;
-                init_states.push_back({30,0,0,5});
-        arg.Q <<  1, 0, 0, 0, 
-                            0, 1, 0, 0,
-                            0, 0, 1, 0,
-                            0, 0, 0, 1;
-                break;
-
-            default:
-                init_states.push_back({50,2,0,1});
-                break;
-    }
-}
-
-int main(){
-     scenario scenario_type;
-     //----------------- 可选择的scenario类型-----------------------
-     // scenario_type = custom;                                      //在ilqr.h里面自定义场景
-     // scenario_type = dynamic_collision_avoid;      //动态避障
-     scenario_type = dense_static_obstacle; // 密集静态障碍物避障
-     // scenario_type = narror_corridor;                     //窄通道同行
-     // scenario_type = following;                                  //跟车行驶
-
-     // 参数初始化
-     Arg arg;
-     bool is_following = false;
-     // 障碍物初始化
-     std::vector<Trajectory> total_obs_traj;
-     std::vector<State> init_states;
-     set_scenario(scenario_type, init_states, arg, is_following);
-     obs_traj_init(total_obs_traj, arg.N, init_states);
-
-     std::vector<Point> way_points;
-     std::vector<std::vector<double>> global_plan_log(3), ego_log(4);
-     // 获取地图信息
-     std::vector<std::vector<double>> m_map_info = load_map();
-
-     // 填充路点
-     for (int i = 0; i < m_map_info[0].size(); i++)
-     {
-         double x, y, heading;
-         if (scenario_type == following)
-         {
-             x = m_map_info[0][i];
-             y = 0;
-             heading = 0;
-         }else{
-            x = m_map_info[0][i];
-            y = m_map_info[1][i];
-            heading = m_map_info[2][i];
-        }
-
-        Point point(x,y,heading);
-        way_points.push_back(point);
+    // 加载地图并设置全局路径
+    std::vector<Point> waypoints;
+    std::vector<std::vector<double>> global_plan_log(3), ego_history_trajectory_log(4);
+    auto map_info = load_map();
+    for (size_t i = 0; i < map_info[0].size(); ++i) {
+        double x = map_info[0][i];
+        double y = scenario_type == FOLLOWING ? 0 : map_info[1][i];
+        double heading = scenario_type == FOLLOWING ? 0 : map_info[2][i];
+        // y = 0;
+        // heading = 0;
+        waypoints.emplace_back(x, y, heading);
         global_plan_log[0].push_back(x);
         global_plan_log[1].push_back(y);
         global_plan_log[2].push_back(heading);
     }
-    // 设置全局路径
     GlobalPlan global_plan;
-    global_plan.set_plan(way_points);
+    global_plan.set_plan(waypoints);
 
-    //车辆模型初始化
+    // 初始化车辆模型
     Vehicle ego;
-    ego.set_state(m_map_info[0][0],m_map_info[1][0],m_map_info[2][0],1);
+    ego.set_state(map_info[0][0], map_info[1][0], map_info[2][0], 1);
     ego.set_global_plan(global_plan);
-    ego.set_model(SystemModel(arg.dt,arg.N));
-    for(int i=0;i<4;i++){
-        ego_log[i].push_back(ego.get_state()[i]);
+    ego.set_model(SystemModel(config.arg));
+    for (int i = 0; i < 4; ++i) {
+        ego_history_trajectory_log[i].push_back(ego.get_state()[i]);
     }
 
-    //求解器初始化
-    CILQRSolver cilqr_solver(ego,arg);
+    // 初始化求解器
+    CILQRSolver cilqr_solver(ego, config.arg);
+    State current_state = ego.get_state();
 
+    // 主循环
+    for (int i = 0; i < 2000; ++i) {
+        std::cout << "***** Iter " << i << " *****\n";
+	
+        update_obstacle_trajectories(obstacle_trajectories, config.arg.N);
+	
+	//对外接口
+		// //当前帧障碍物轨迹（可能需要进行预测后处理）
+		// obstacle_trajectories = obstacle_trajectories;
+		// //当前帧自车状态
+		// current_state = current_state;
+		// //当前帧全局参考路径
+		// cilqr_solver.set_global_plan(waypoints);
+	//
 
-    Solution solution;
-    Control cur_ctrl;
-    State cur_state = ego.get_state();
-
-    //主循环
-    for(int i = 0;i<2000;i++){
-        std::cout<<"***** Iter ***** " << i <<std::endl;
-        //更新障碍物轨迹
-        update_obs_traj(total_obs_traj,arg.N);
-
-        // 问题求解
+        // 求解优化问题
         clock_t start = clock();
-        solution = cilqr_solver.solve(cur_state,total_obs_traj,is_following); 
+        Solution solution = cilqr_solver.solve(current_state, obstacle_trajectories, config.arg.is_following);
         clock_t end = clock();
-        double cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
-        std::cout << "CPU time used: " << cpu_time_used * 1000 << " ms\n";
+        std::cout << "CPU time used: " << (static_cast<double>(end - start) / CLOCKS_PER_SEC) * 1000 << " ms\n";
 
-        //更新车辆状态以及控制
-        cur_ctrl = solution.control_sequence.controls[0];
-        cur_state = ego.get_model().dynamics(cur_state,cur_ctrl);
-        //记录车辆历史轨迹
-        for(int j=0;j<4;j++){
-            ego_log[j].push_back(cur_state[j]);
+        // 更新车辆状态
+        Control current_control = solution.control_sequence.controls[0];
+        current_state = ego.get_model().dynamics(current_state, current_control);
+        for (int j = 0; j < 4; ++j) {
+            ego_history_trajectory_log[j].push_back(current_state[j]);
         }
-        //打印车辆状态，并绘制相应图形
-        std::cout<<cur_state<<std::endl;
-        my_plot(global_plan_log,ego_log,total_obs_traj,solution,arg);
+
+        // 输出状态并绘图
+        std::cout << current_state << "\n";
+        my_plot(global_plan_log, ego_history_trajectory_log, obstacle_trajectories, solution, config.arg);
     }
+
     return 0;
 }
-

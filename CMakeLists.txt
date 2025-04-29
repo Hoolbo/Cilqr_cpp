@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.15)
 project(Cilqr_cpp)
 
@@ -15,6 +16,7 @@ else()
 message(FATAL_ERROR "Eigen3 not found. Please install Eigen3.")
 endif()
 
+set(Python3_EXECUTABLE "/usr/bin/python3.8")
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 if(Python3_FOUND)
 include_directories(${Python3_INCLUDE_DIRS})
@@ -46,9 +48,9 @@ endif()
 include_directories(include)
 
 if(NOT CMAKE_BUILD_TYPE)
-set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
 endif()
-set(CMAKE_CXX_FLAGS_DEBUG "-O0")
+set(CMAKE_CXX_FLAGS_DEBUG "-g   -O0")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 aux_source_directory(./src SRC_LIST)
@@ -58,5 +60,5 @@ add_executable(main ${SRC_LIST})
 if(WIN32)
 target_link_libraries(main PRIVATE matplotlib_cpp python36_d.lib npymath.lib)
 else()
-target_link_libraries(main PRIVATE matplotlib_cpp ${Python3_LIBRARIES})
+target_link_libraries(main PRIVATE matplotlib_cpp ${Python3_LIBRARIES} pthread dl util)
 endif()

@@ -42,7 +42,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     double OBS_WIDTH = arg.obs_width;         // 障碍物宽度
     // 动态视图参数
     constexpr double FOLLOW_FACTOR = 0.7;
-    constexpr double BASE_MARGIN = 20.0;
+    constexpr double BASE_MARGIN = 50.0;
     static std::pair<double, double> view_center = {0, 0};
 
     // 检查输入

@@ -10,7 +10,8 @@ typedef Vector2d Control;
 
 struct Arg
 {
-    double following_distance = 10;
+    bool is_following = false;
+    double following_distance = 20;
     // 车辆参数
     double ego_rad = 3;
     double lf = 1.6;
@@ -50,15 +51,15 @@ struct Arg
     // 道路约束
     double trace_safe_width_left = 4;
     double trace_safe_width_right = 4;
-    double lane_q1 = 5;
+    double lane_q1 = 100;
     double lane_q2 = 5;
     // 障碍约束
     double obs_q1 = 5;
     double obs_q2 = 5;
     double obs_length = 2;
     double obs_width = 1;
-    double safe_a_buffer = 2;
-    double safe_b_buffer = 0.5;
+    double safe_a_buffer = 0;
+    double safe_b_buffer = 0;
     // QR矩阵
     Matrix4d Q;
     Matrix2d R;
@@ -152,15 +153,15 @@ struct Arg
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 3;
-            double lf      = 1.6;
-            double lr      =  1.13;
-            double len       =  2.73;
-            double width   =  2;
-            double dt = 0.1;
-            size_t N = 50;
+            double ego_rad;
+            double lf;
+            double lr;
+            double len;
+            double width;
+            double dt;
+            size_t N;
             SystemModel() = default;
-            SystemModel(double dt,size_t N):dt(dt),N(N){};
+            SystemModel(Arg arg):ego_rad(arg.ego_rad),lf(arg.lf),lr(arg.lr),len(arg.len),width(arg.width),dt(arg.dt),N(arg.N){};
             State dynamics(const State& X, const Control& U);
             Matrix4d get_jacobian_state(const Vector4d& X, const Vector2d& U);
             Matrix<double,4,2> get_jacobian_control(const Vector4d& X, const Vector2d& U);
@@ -327,7 +328,7 @@ struct Arg
         public:
             //构造函数
             CILQRSolver(const Vehicle& ego, const Arg& arg) 
-            : ego(ego), obs(obs), arg(arg), 
+            : ego(ego), arg(arg), 
             k(arg.N, Vector2d::Zero()),
             K(arg.N,MatrixXd::Zero(2,4)),
             df_dx(arg.N,MatrixXd::Zero(4,4)),
@@ -346,6 +347,11 @@ struct Arg
             void set_global_plan(const GlobalPlan& global_plan){
                 ego.set_global_plan(global_plan);
             }
+            void set_global_plan(const std::vector<Point>& waypoints){
+                GlobalPlan global_plan;
+                global_plan.set_plan(waypoints);
+                ego.set_global_plan(global_plan);
+            }   
 
     };
 #endif

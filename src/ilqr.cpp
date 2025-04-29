@@ -51,7 +51,7 @@ State SystemModel::dynamics(const State& X, const Control& U){
     double beta = atan((lr / (lr + lf)) * tan(U[1]));
     State X_next;
     X_next << 
-        X[0] + X[3] * cos(X[2] + beta) * dt,
+        X[0] + X[3] * cos(X[2] + beta) * dt, 
         X[1] + X[3] * sin(X[2] + beta) * dt,
         X[2] + (X[3] / len) * tan(U[1]) * cos(beta) * dt,
         X[3] + U[0] * dt;
@@ -111,10 +111,14 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
 
 
     //如果接近终点就把期望速度置0
-    Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/3];
+    Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/2];
     Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
     if(local_middle_point == global_last_point){
         arg.desire_speed = 0;
+        arg.Q<<10,0,0,0,
+                        0,10,0,0,
+                        0,0,1,0,
+                        0,0,0,1;
         // arg.desire_heading = 0;
         // arg.Q(3,3) = 0;
     }
@@ -207,6 +211,7 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
                 current_solution = nominal_solution;
                 pre_solution = Solution();
                 std::cerr << "Unconverged | Maxmum lamb | iteration: "<< iter + 1 << std::endl;
+                exit(0);
                 converged = false;
                 break;
             }
@@ -217,6 +222,7 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
         current_solution = nominal_solution;
         pre_solution = Solution();
         std::cerr << "Unconverged::Maxmum iteration" << std::endl;
+        exit(0);
         converged = false;
     }
     // pre_solution = current_solution;
@@ -627,8 +633,8 @@ void CILQRSolver::backward() {
 Solution CILQRSolver::forward(const Solution& cur_solution){
         
     // 初始化线搜索参数
-    const int max_iterations = 10;
-    double alpha = 1;
+    const int max_iterations = 50;
+    double alpha = 5;
     bool found = false;
     double J_old = cal_cost(cur_solution);
     double J_new = 0;
