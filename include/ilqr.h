@@ -1,80 +1,79 @@
 ﻿#ifndef ILQR_H
-    #define ILQR_H 
-    #include <Eigen/Eigen>
-    #include <algorithm>
-    #include <cmath>
-    using namespace Eigen;
-    // #define M_PI 3.1415
-    typedef Vector4d State;
-    typedef Vector2d Control;
+#define ILQR_H
+#include <Eigen/Eigen>
+#include <algorithm>
+#include <cmath>
+using namespace Eigen;
+// #define M_PI 3.1415
+typedef Vector4d State;
+typedef Vector2d Control;
 
-    struct Arg{
-        double following_distance = 10;
-        //车辆参数
-        double ego_rad = 3;
-        double lf      = 1.6;
-        double lr      =  1.13;
-        double len       =  2.73;
-        double width   =  2;
-        // 仿真参数
-        double tf = 1000;
-        double dt = 0.1;
-        //CILQR参数
-        int N = 20; //Horizen
-        double tol = 1e-3;
-        double rel_tol = 1e-5;
-        int max_iter = 50;
-        double lamb_init = 1;
-        double lamb_factor = 2;
-        double lamb_max = 100;
-        //纯跟踪参数
-        double kv = 0.3; //前视距离系数
-        double kp = 0.8; //速度P控制器系数
-        double ld0 = 3;  //基础前瞻距离
-        double ld_min = 3;
-        double ld_max = 20;
-        //代价参数
-        double desire_speed = 10;
-        double desire_heading = 0;
-        bool if_cal_obs_cost = true;
-        bool if_cal_lane_cost = true;
-        bool if_cal_steer_cost = true;
-        //最大转向约束
-        double steer_angle_max = 1;
-        double steer_max_q1 = 1;
-        double steer_max_q2 = 1;
-        //最小转向约束
-        double steer_angle_min = -1;
-        double steer_min_q1 = 1;
-        double steer_min_q2 = 1;
-        //道路约束
-        double trace_safe_width_left = 4;
-        double trace_safe_width_right = 4;
-        double lane_q1 = 5;
-        double lane_q2 = 5;
-        //障碍约束
-        double obs_q1 = 5;
-        double obs_q2 = 5;
-        double obs_length = 2;
-        double obs_width = 1;
-        double safe_a_buffer = 2;
-        double safe_b_buffer = 0.5;
-        // double buff = 0;
-        // double obs_rad = 1 + buff;
-        //QR矩阵
-        Matrix4d Q;
-        Matrix2d R;
-        //横向偏移代价
-        double ref_weight = 3;
-        Arg() { // 在构造函数中初始化矩阵
-            Q << 0, 0, 0, 0, 
-                      0, 0, 0, 0,
-                      0, 0, 1, 0,
-                      0, 0, 0, 1;
+struct Arg
+{
+    double following_distance = 10;
+    // 车辆参数
+    double ego_rad = 3;
+    double lf = 1.6;
+    double lr = 1.13;
+    double len = 2.73;
+    double width = 2;
+    // 仿真参数
+    double tf = 1000;
+    double dt = 0.1;
+    // CILQR参数
+    int N = 20; // Horizen
+    double tol = 1e-3;
+    int max_iter = 50;
+    double lamb_init = 1;
+    double lamb_factor = 2;
+    double lamb_max = 100;
+    // 纯跟踪参数
+    double kv = 0.3; // 前视距离系数
+    double kp = 0.8; // 速度P控制器系数
+    double ld0 = 3;  // 基础前瞻距离
+    double ld_min = 3;
+    double ld_max = 20;
+    // 代价参数
+    double desire_speed = 10;
+    double desire_heading = 0;
+    bool if_cal_obs_cost = true;
+    bool if_cal_lane_cost = true;
+    bool if_cal_steer_cost = true;
+    // 最大转向约束
+    double steer_angle_max = 1;
+    double steer_max_q1 = 1;
+    double steer_max_q2 = 1;
+    // 最小转向约束
+    double steer_angle_min = -1;
+    double steer_min_q1 = 1;
+    double steer_min_q2 = 1;
+    // 道路约束
+    double trace_safe_width_left = 4;
+    double trace_safe_width_right = 4;
+    double lane_q1 = 5;
+    double lane_q2 = 5;
+    // 障碍约束
+    double obs_q1 = 5;
+    double obs_q2 = 5;
+    double obs_length = 2;
+    double obs_width = 1;
+    double safe_a_buffer = 2;
+    double safe_b_buffer = 0.5;
+    // QR矩阵
+    Matrix4d Q;
+    Matrix2d R;
+    // 横向偏移代价
+    double ref_weight = 3;
+    Arg()
+    { // 在构造函数中初始化矩阵
+        Q << 0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1;
 
-            R <<    1,    0,
-                        0,      100;
-        }
+        R << 1, 0,
+            0, 100;
+    }
     };
     //路点结构体
     struct Point{
@@ -280,6 +279,7 @@
             }
             size_t size() const { return controls.size(); }
         };
+        
     struct Solution {
         Solution(){}
         Solution(Trajectory ego_trj,ControlSequence control_sequence){

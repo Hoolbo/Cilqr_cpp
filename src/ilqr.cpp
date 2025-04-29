@@ -711,7 +711,7 @@ Control CILQRSolver::pure_pursuit(const State& X_cur) {
     double accumulated_dist = 0.0;
     for (size_t i = indexNow; i < local_plan.size(); ++i) {
         if (i > indexNow) {
-            accumulated_dist += distance(local_plan[i], local_plan[i-1]);
+            accumulated_dist += distance(local_plan[i], local_plan[i - 1]);
         }
         if (accumulated_dist >= Ld) {
             indexTarget = i;

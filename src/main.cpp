@@ -75,17 +75,16 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
                 //CILQR参数
                 arg.N = 20; //Horizen
                 arg.tol = 1e-3;
-                arg.rel_tol = 1e-5;
                 arg.max_iter = 50;
                 arg.lamb_init = 1;
                 arg.lamb_factor = 2;
                 arg.lamb_max = 100;
-                //纯跟踪参数
-                arg.kv = 0.3; //前视距离系数
+		// 纯跟踪参数
+		arg.kv = 0.3; //前视距离系数
                 arg.kp = 0.8; //速度P控制器系数
                 arg.ld0 = 3;  //基础前瞻距离
-                arg.ld_min = 3;
-                arg.ld_max = 20;
+		arg.ld_min = 3;
+		arg.ld_max = 20;
                 //代价参数
                 arg.desire_speed = 10;
                 arg.desire_heading = 0;
@@ -131,7 +130,7 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
                 init_states.push_back({80,3,0,0});
                 init_states.push_back({90,-2,0,0});
                 init_states.push_back({100,2,-M_PI/4,0});
-                init_states.push_back({105, -2,M_PI/4,0});
+                init_states.push_back({110, -2,M_PI/4,0});
                 //车辆参数
                 arg.ego_rad = 3;
                 arg.lf      = 1.6;
@@ -144,7 +143,6 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
                 //CILQR参数
                 arg.N = 10; //Horizen
                 arg.tol = 1e-3;
-                arg.rel_tol = 1e-5;
                 arg.max_iter = 50;
                 arg.lamb_init = 1;
                 arg.lamb_factor = 2;
@@ -212,7 +210,6 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
                 //CILQR参数
                 arg.N = 50; //Horizen
                 arg.tol = 1e-3;
-                arg.rel_tol = 1e-5;
                 arg.max_iter = 50;
                 arg.lamb_init = 1;
                 arg.lamb_factor = 2;
@@ -279,36 +276,37 @@ void set_scenario(scenario& scenario_type, std::vector<State>& init_states, Arg&
 
 int main(){
      scenario scenario_type;
-    //----------------- 可选择的scenario类型-----------------------
-    // scenario_type = custom;                                      //在ilqr.h里面自定义场景
-    scenario_type = dynamic_collision_avoid;      //动态避障
-    // scenario_type = dense_static_obstacle;       //密集静态障碍物避障
-    // scenario_type = narror_corridor;                     //窄通道同行
-    // scenario_type = following;                                  //跟车行驶
+     //----------------- 可选择的scenario类型-----------------------
+     // scenario_type = custom;                                      //在ilqr.h里面自定义场景
+     // scenario_type = dynamic_collision_avoid;      //动态避障
+     scenario_type = dense_static_obstacle; // 密集静态障碍物避障
+     // scenario_type = narror_corridor;                     //窄通道同行
+     // scenario_type = following;                                  //跟车行驶
 
+     // 参数初始化
+     Arg arg;
+     bool is_following = false;
+     // 障碍物初始化
+     std::vector<Trajectory> total_obs_traj;
+     std::vector<State> init_states;
+     set_scenario(scenario_type, init_states, arg, is_following);
+     obs_traj_init(total_obs_traj, arg.N, init_states);
 
-    //参数初始化
-    Arg arg;
-    bool is_following = false;
-    //障碍物初始化
-    std::vector<Trajectory> total_obs_traj;
-    std::vector<State> init_states;
-    set_scenario(scenario_type,init_states,arg,is_following);
-    obs_traj_init(total_obs_traj,arg.N,init_states);
+     std::vector<Point> way_points;
+     std::vector<std::vector<double>> global_plan_log(3), ego_log(4);
+     // 获取地图信息
+     std::vector<std::vector<double>> m_map_info = load_map();
 
-    std::vector<Point> way_points;
-    std::vector<std::vector<double>> global_plan_log(3),ego_log(4);
-    //获取地图信息
-    std::vector<std::vector<double>> m_map_info = load_map();
-
-    //填充路点
-    for(int i=0;i<m_map_info[0].size();i++){
-        double x,y,heading;
-        if(scenario_type == following){
-            x = m_map_info[0][i];
-            y = 0;
-            heading = 0;
-        }else{
+     // 填充路点
+     for (int i = 0; i < m_map_info[0].size(); i++)
+     {
+         double x, y, heading;
+         if (scenario_type == following)
+         {
+             x = m_map_info[0][i];
+             y = 0;
+             heading = 0;
+         }else{
             x = m_map_info[0][i];
             y = m_map_info[1][i];
             heading = m_map_info[2][i];
@@ -324,8 +322,6 @@ int main(){
     GlobalPlan global_plan;
     global_plan.set_plan(way_points);
 
-
-
     //车辆模型初始化
     Vehicle ego;
     ego.set_state(m_map_info[0][0],m_map_info[1][0],m_map_info[2][0],1);
@@ -337,6 +333,8 @@ int main(){
 
     //求解器初始化
     CILQRSolver cilqr_solver(ego,arg);
+
+
     Solution solution;
     Control cur_ctrl;
     State cur_state = ego.get_state();

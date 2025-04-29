@@ -202,7 +202,8 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     double new_ylim_min = view_center.second - margin;
     double new_ylim_max = view_center.second + margin;
     if (abs(new_xlim_min - last_xlim.first) > 0.1 || abs(new_xlim_max - last_xlim.second) > 0.1 ||
-        abs(new_ylim_min - last_ylim.first) > 0.1 || abs(new_ylim_max - last_ylim.second) > 0.1) {
+        abs(new_ylim_min - last_ylim.first) > 0.1 || abs(new_ylim_max - last_ylim.second) > 0.1)
+    {
         plt::xlim(new_xlim_min, new_xlim_max);
         plt::ylim(new_ylim_min, new_ylim_max);
         last_xlim = {new_xlim_min, new_xlim_max};
