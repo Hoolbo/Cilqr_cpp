@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <vector>
 #include <ctime>
 #include "ilqr.h"
@@ -22,7 +22,9 @@ void set_default_params(Arg& arg) {
     arg.is_following = false;
     arg.following_distance = 20;
     // 车辆参数
-    arg.ego_rad = 3;
+    arg.ego_circle_rad = 1.46;
+    arg.front_circle_center_to_ego_center = 1.46;
+    arg.rear_circle_center_to_ego_center = -1.46;
     arg.lf = 1.45;
     arg.lr = 1.45;
     arg.len = 4.8;
@@ -38,7 +40,7 @@ void set_default_params(Arg& arg) {
     arg.max_iter = 5000;
     arg.lamb_init = 1;
     arg.lamb_factor = 2;
-    arg.lamb_max = 100;
+    arg.lamb_max = 1000;
 
     // 纯跟踪参数
     arg.kv = 0.3;
@@ -55,12 +57,12 @@ void set_default_params(Arg& arg) {
     arg.if_cal_steer_cost = true;
 
     // 转向约束
-    arg.steer_angle_max = 1;
-    arg.steer_max_q1 = 1;
-    arg.steer_max_q2 = 1;
-    arg.steer_angle_min = -1;
-    arg.steer_min_q1 = 1;
-    arg.steer_min_q2 = 1;
+    arg.steer_angle_max = 0.698; // 最大转向角：40°
+    arg.steer_max_q1 = 3.87298334620741657730036422435659915208816528320312;
+    arg.steer_max_q2 = 775.7992361635523366203415207564830780029296875;
+    arg.steer_angle_min = -0.698; // 最小转向角：-40°
+    arg.steer_min_q1 = 3.87298334620741657730036422435659915208816528320312;
+    arg.steer_min_q2 = 775.7992361635523366203415207564830780029296875;
 
     // 道路约束
     arg.trace_safe_width_left = 4;
@@ -69,21 +71,21 @@ void set_default_params(Arg& arg) {
     arg.lane_q2 = 14;
 
     // 障碍约束
-    arg.obs_q1 = 1000;
-    arg.obs_q2 = 14;
+    arg.obs_q1 = 25.290355;
+    arg.obs_q2 = 10.447458;
     arg.obs_length = 2;
     arg.obs_width = 1;
-    arg.safe_a_buffer = 1;
-    arg.safe_b_buffer = 0.5;
+    arg.safe_a_buffer = 0.5;
+    arg.safe_b_buffer = 0.25;
 
     // 横向偏移代价       
-    arg.ref_weight = 3;
+    arg.ref_weight = 3.0;
     arg.Q << 0, 0, 0, 0,
              0, 0, 0, 0,
              0, 0, 1, 0,
              0, 0, 0, 1;
     arg.R << 1, 0,
-             0, 100;
+             0, 200;
 }
 
 // 场景配置结构体
@@ -112,7 +114,8 @@ ScenarioConfig configure_scenario(Scenario type) {
                 {30, 1, 0, 0}, {45, 2, 0, 0}, {60, -2, 0, 0},
                 {70, 2, 0, 0}, {90, -2, 0, 0}, {95, 3, 0, 0},
                 {100, 2, -M_PI/4, 0}, {110, -2, M_PI/4, 0},
-                {125,2,0,0},{130, 2, 0, 0}, {135,2,0,0},{140, 2, 0, 0}, {145,2,0,0},{145, -2, 0, 0}
+                {125,2,0,0},{130, 2, 0, 0}, {135,2,0,0},{140, 2, 0, 0}, {145,2,0,0},
+                {125,-6,0,0},{130, -6, 0, 0}, {135,-6,0,0},{140, -6, 0, 0}, {145,-6,0,0}
             };
             config.arg.N = 80;
             config.arg.desire_speed = 10;
@@ -125,9 +128,9 @@ ScenarioConfig configure_scenario(Scenario type) {
                 {110, 4, M_PI/64, 0}, {110, -2.5, M_PI/50, 0}
             };
             config.arg.obs_length = 20;
-            config.arg.obs_width = 2;
-            config.arg.safe_a_buffer = 0;
-            config.arg.safe_b_buffer = 1;
+            config.arg.obs_width = 2.5;
+            config.arg.safe_b_buffer = 0.0;
+            config.arg.ref_weight = 0.0;
             break;
 
         case FOLLOWING:
@@ -191,7 +194,7 @@ void update_obstacle_trajectories(std::vector<Trajectory>& trajectories, int hor
 
 // 主函数
 int main() {
-    Scenario scenario_type = Scenario::NARROW_CORRIDOR; // 可选场景
+    Scenario scenario_type = Scenario::DYNAMIC_COLLISION_AVOID; // 可选场景
 
     // 初始化参数和障碍物
     ScenarioConfig config = configure_scenario(scenario_type);

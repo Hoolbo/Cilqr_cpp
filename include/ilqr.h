@@ -13,11 +13,13 @@ struct Arg
     bool is_following = false;
     double following_distance = 20;
     // 车辆参数
-    double ego_rad = 3;
+    double ego_circle_rad = 1.46;
+    double front_circle_center_to_ego_center = 1.46;
+    double rear_circle_center_to_ego_center = -1.46;
     double lf = 1.6;
     double lr = 1.13;
-    double len = 2.73;
-    double width = 2;
+    double len = 4.8;
+    double width = 2.25;
     // 仿真参数
     double tf = 1000;
     double dt = 0.1;
@@ -64,7 +66,7 @@ struct Arg
     Matrix4d Q;
     Matrix2d R;
     // 横向偏移代价
-    double ref_weight = 3;
+    double ref_weight = 1.0;
     Arg()
     { // 在构造函数中初始化矩阵
         Q << 0, 0, 0, 0,
@@ -153,7 +155,7 @@ struct Arg
     //系统模型
     class SystemModel{
         public:
-            double ego_rad;
+            double ego_circle_rad;
             double lf;
             double lr;
             double len;
@@ -161,7 +163,7 @@ struct Arg
             double dt;
             size_t N;
             SystemModel() = default;
-            SystemModel(Arg arg):ego_rad(arg.ego_rad),lf(arg.lf),lr(arg.lr),len(arg.len),width(arg.width),dt(arg.dt),N(arg.N){};
+            SystemModel(Arg arg):ego_circle_rad(arg.ego_circle_rad),lf(arg.lf),lr(arg.lr),len(arg.len),width(arg.width),dt(arg.dt),N(arg.N){};
             State dynamics(const State& X, const Control& U);
             Matrix4d get_jacobian_state(const Vector4d& X, const Vector2d& U);
             Matrix<double,4,2> get_jacobian_control(const Vector4d& X, const Vector2d& U);

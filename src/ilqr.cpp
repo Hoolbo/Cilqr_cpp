@@ -113,14 +113,17 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
     //如果接近终点就把期望速度置0
     Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/2];
     Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
-    if(local_middle_point == global_last_point){
-        arg.desire_speed = 0;
+    static bool is_near_end = false;
+    if(local_middle_point == global_last_point || is_near_end){
+        arg.desire_speed = 1;
         arg.Q<<10,0,0,0,
                         0,10,0,0,
-                        0,0,1,0,
-                        0,0,0,1;
+                        0,0,10,0,
+                        0,0,0,10;
         // arg.desire_heading = 0;
         // arg.Q(3,3) = 0;
+        std::cout<<"接近终点!!!!!!!!!"<<std::endl;
+        is_near_end = true;
     }
 
     Solution nominal_solution = get_nominal_solution(init_state);
@@ -187,11 +190,12 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
             // 更新当前解
             current_solution = new_solution;
             // 收敛终止条件判断
-            if (J_old - J_new < arg.tol) {
+            if (fabs(J_old - J_new) < arg.tol) {
                 //记录上一次解
                 // J_total = J_new;
                 pre_solution = current_solution;
-                std::cout << "Converged | iteration: " << iter + 1  <<" J_total :" << J_new << std::endl;
+                cal_cost(new_solution); // 调用这个函数将打印出详细的子代价
+                std::cout << "收敛完成 | 迭代次数: " << iter + 1  <<" 总代价: " << J_new << std::endl;
                 converged = true;
                 break;
             }
@@ -350,29 +354,48 @@ double CILQRSolver::cal_cost(const Solution& solution){
             cost_lane_right = arg.lane_q1*exp(arg.lane_q2*c_right);
             cost_lane = cost_lane_left + cost_lane_right;
         }
-        //计算障碍物代价
-        if(arg.if_cal_obs_cost){
+        // 计算障碍物代价（改为双圆模型）
+        if (arg.if_cal_obs_cost) {
             cost_obs = 0;
-            for(int j=0;j<obs.size();j++){
-                if(i >= obs[j].get_states().size()){ // 添加长度检查
-                std::cerr << "Obs trajectory error" << std::endl;
-                break;
+            for (int j = 0; j < obs.size(); j++) {
+                if (i >= obs[j].get_states().size()) {
+                    std::cerr << "Obs trajectory error" << std::endl;
+                    break;
                 }
-            State obs_state = obs[j].get_states()[i];
-            dx = X[0] - obs_state[0];  // Ego车与障碍物的x坐标差
-            dy = X[1] - obs_state[1];  // Ego车与障碍物的y坐标差
-            Vector2d dX_obs = {dx,dy};
-            double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-            double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-            Matrix2d rotation_matrix;
-            rotation_matrix << cos(obs_state[2]), sin(obs_state[2]), 
-                              -sin(obs_state[2]), cos(obs_state[2]);
-            Vector2d dX_obs_cord =  rotation_matrix * dX_obs;
-            c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2)+pow(dX_obs_cord[1],2)/pow(b,2));
-            cost_obs += arg.obs_q1*exp(arg.obs_q2*c);
+                State obs_state = obs[j].get_states()[i];
+                // 定义两个圆的局部坐标系圆心
+                Vector2d circle_centers[2] = {
+                    Vector2d(arg.front_circle_center_to_ego_center, 0),  // 前圆心
+                    Vector2d(arg.rear_circle_center_to_ego_center, 0)  // 后圆心
+                };
+                double radius = 1.46;  // 两个圆的半径
+                // 对每个圆计算代价
+                for (int k = 0; k < 2; k++) {
+                    // 将圆心从车辆坐标系转换到全局坐标系
+                    double theta = X[2];  // Ego车辆朝向
+                    Matrix2d R_ego;
+                    R_ego << cos(theta), -sin(theta),
+                             sin(theta), cos(theta);
+                    Vector2d circle_center_global = Vector2d(X[0], X[1]) + R_ego * circle_centers[k];
+                    // 计算与障碍物的相对位置
+                    double dx = circle_center_global[0] - obs_state[0];
+                    double dy = circle_center_global[1] - obs_state[1];
+                    Vector2d dX_obs = {dx, dy};
+                    // 障碍物椭圆参数
+                    double a = arg.obs_length / 2 + radius + arg.safe_a_buffer;
+                    double b = arg.obs_width / 2 + radius + arg.safe_b_buffer;
+                    // 转换到障碍物局部坐标系
+                    Matrix2d rotation_matrix;
+                    rotation_matrix << cos(obs_state[2]), sin(obs_state[2]),
+                                      -sin(obs_state[2]), cos(obs_state[2]);
+                    Vector2d dX_obs_cord = rotation_matrix * dX_obs;
+                    // 计算约束函数 c
+                    c = 1 - (pow(dX_obs_cord[0], 2) / pow(a, 2) + pow(dX_obs_cord[1], 2) / pow(b, 2));
+                    // 累加代价
+                    cost_obs += arg.obs_q1 * exp(arg.obs_q2 * c);
+                }
             }
-
-        } 
+        }
         J_obs_total += cost_obs;
         J_lane_total += cost_lane;
         J_state_total += cost_state + cost_state_ref;
@@ -396,14 +419,15 @@ double CILQRSolver::cal_cost(const Solution& solution){
         J_ctrl_total += cost_ctrl;
     }
     J_constraint_total = J_obs_total + J_steer_total + J_lane_total;
-    // std::cout<<"state cost:"<<J_state_total<<" ctrl cost:"<<J_ctrl_total<<" constraint cost:"<<J_constraint_total<<std::endl;
+    /* 启用这行代码用于调试 */
+    std::cout<<"状态成本:"<<J_state_total<<" 控制成本:"<<J_ctrl_total<<" 障碍物成本:"<<J_obs_total<<" 转向成本:"<<J_steer_total<<" 车道成本:"<<J_lane_total<<" 约束总成本:"<<J_constraint_total<<std::endl;
     return  J_state_total + J_ctrl_total + J_constraint_total;
 }
 
 void CILQRSolver::compute_df(const Solution& solution){
     for(int i=0;i<this->arg.N;i++){
         State X = solution.ego_trj.get_states()[i];
-        Control U = solution.control_sequence.get_control_sequence()[i]; 
+        Control U = solution.control_sequence.get_control_sequence()[i];
         this->df_dx[i] = this->ego.get_model().get_jacobian_state(X,U);
         this->df_du[i] = this->ego.get_model().get_jacobian_control(X,U);
     }
@@ -460,7 +484,7 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
         nor_r << -std::sin(X_r_point.heading), std::cos(X_r_point.heading);
         l_dx_ref << -2*dX.dot(nor_r)*sin(X_r_point.heading),
                      2*dX.dot(nor_r)*cos(X_r_point.heading),
-                     0, 
+                     0,
                      0;
         l_ddx_ref << 2*pow(sin(X_r_point.heading),2),       -sin(2*X_r_point.heading), 0, 0,
                            -sin(2*X_r_point.heading), 2*pow(cos(X_r_point.heading),2), 0, 0,
@@ -469,43 +493,57 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
         l_dx_ref = l_dx_ref * arg.ref_weight;
         l_ddx_ref = l_ddx_ref * arg.ref_weight;
 
-        //计算障碍相关导数
+        // 计算障碍相关导数（改为双圆模型）
         if (arg.if_cal_obs_cost) {
-            db_obs =  Vector4d::Zero();
-            ddb_obs =  Matrix4d::Zero();
-            for(int j=0;j<total_obs_traj.size();j++){
-                const State& obs_state =total_obs_traj[j].get_states()[i];
-                double dx = X[0] - obs_state[0];
-                double dy = X[1] - obs_state[1];
-                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-            
-                // 坐标变换到障碍物局部系
-                Vector2d dX_obs(dx, dy);
-                Matrix2d rotation_matrix;
-                rotation_matrix << cos(obs_state[2]),  sin(obs_state[2]), 
-                                -sin(obs_state[2]),  cos(obs_state[2]);
-                Vector2d dX_obs_cord = rotation_matrix * dX_obs;
-            
-                // 计算约束函数 c
-                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-            
-                // 计算局部坐标系梯度
-                Vector2d grad_local(-2 * dX_obs_cord[0] / (a * a), 
-                                -2 * dX_obs_cord[1] / (b * b));
-            
-                // 转换到全局坐标系梯度
-                Matrix2d rotation_matrix_transpose = rotation_matrix.transpose();
-                Vector2d grad_global = rotation_matrix_transpose * grad_local;
-            
-                // 构建状态梯度向量
-                Vector4d c_dot;
-                c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
-            
-                // 后续处理（指数权重、截断等）
-                double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
-                db_obs += exp_term * c_dot;
-                ddb_obs += exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
+            db_obs = Vector4d::Zero();
+            ddb_obs = Matrix4d::Zero();
+            for (int j = 0; j < total_obs_traj.size(); j++) {
+                const State& obs_state = total_obs_traj[j].get_states()[i];
+                // 定义两个圆的局部坐标系圆心
+                Vector2d circle_centers[2] = {
+                    Vector2d(arg.front_circle_center_to_ego_center, 0),  // 前圆心
+                    Vector2d(arg.rear_circle_center_to_ego_center, 0)  // 后圆心
+                };
+                double radius = 1.46;  // 两个圆的半径
+                // 对每个圆计算导数
+                for (int k = 0; k < 2; k++) {
+                    // 将圆心从车辆坐标系转换到全局坐标系
+                    double theta = X[2];
+                    Matrix2d R_ego;
+                    R_ego << cos(theta), -sin(theta),
+                             sin(theta), cos(theta);
+                    Vector2d circle_center_local = circle_centers[k];
+                    Vector2d circle_center_global = Vector2d(X[0], X[1]) + R_ego * circle_center_local;
+                    // 计算与障碍物的相对位置
+                    double dx = circle_center_global[0] - obs_state[0];
+                    double dy = circle_center_global[1] - obs_state[1];
+                    Vector2d dX_obs(dx, dy);
+                    // 障碍物椭圆参数
+                    double a = arg.obs_length / 2 + radius + arg.safe_a_buffer;
+                    double b = arg.obs_width / 2 + radius + arg.safe_b_buffer;
+                    // 转换到障碍物局部坐标系
+                    Matrix2d rotation_matrix;
+                    rotation_matrix << cos(obs_state[2]), sin(obs_state[2]), 
+                                      -sin(obs_state[2]), cos(obs_state[2]);
+                    Vector2d dX_obs_cord = rotation_matrix * dX_obs;
+                    // 计算约束函数 c
+                    double c = 1 - (pow(dX_obs_cord[0], 2) / pow(a, 2) + pow(dX_obs_cord[1], 2) / pow(b, 2));
+                    // 计算局部坐标系梯度
+                    Vector2d grad_local(-2 * dX_obs_cord[0] / (a * a), 
+                                        -2 * dX_obs_cord[1] / (b * b));
+                    // 转换到全局坐标系梯度
+                    Matrix2d rotation_matrix_transpose = rotation_matrix.transpose();
+                    Vector2d grad_global = rotation_matrix_transpose * grad_local;
+                    // 计算圆心对 theta 的偏导数
+                    Vector2d dc_dtheta = R_ego * Vector2d(-circle_center_local[1], circle_center_local[0]);
+                    // 构建状态梯度向量
+                    Vector4d c_dot;
+                    c_dot << grad_global[0], grad_global[1], grad_global.dot(dc_dtheta), 0.0;
+                    // 计算导数
+                    double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
+                    db_obs += exp_term * c_dot;
+                    ddb_obs += exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
+                }
             }
         }
 

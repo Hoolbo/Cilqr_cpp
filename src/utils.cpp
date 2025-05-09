@@ -33,16 +33,23 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     namespace plt = matplotlibcpp;
     // 静态绘图对象
     static std::unique_ptr<matplotlibcpp::Plot> global_plot, ego_plot, trajectory_plot, vehicle_rect_plot;
+    static std::unique_ptr<matplotlibcpp::Plot> circle1_plot, circle2_plot; // 新增：两个圆的绘图对象
     static std::vector<std::unique_ptr<matplotlibcpp::Plot>> obs_traj_plots; // 障碍物矩形
     static bool figure_initialized = false;
     // 车辆和障碍物参数
     double VEHICLE_LENGTH = arg.len;  // 车长（单位：米）
-    double VEHICLE_WIDTH = arg.width;     // 车宽
-    double OBS_LENGTH = arg.obs_length;      // 障碍物长度
-    double OBS_WIDTH = arg.obs_width;         // 障碍物宽度
+    double VEHICLE_WIDTH = arg.width; // 车宽
+    double OBS_LENGTH = arg.obs_length; // 障碍物长度
+    double OBS_WIDTH = arg.obs_width;   // 障碍物宽度
+    // 双圆模型参数
+    const double CIRCLE_RADIUS = 1.4; // 圆的半径
+    const std::array<std::pair<double, double>, 2> CIRCLE_CENTERS = {
+        std::make_pair(1.46, 0.0),  // 前圆心
+        std::make_pair(-1.46, 0.0)  // 后圆心
+    };
     // 动态视图参数
     constexpr double FOLLOW_FACTOR = 0.7;
-    constexpr double BASE_MARGIN = 50.0;
+    constexpr double BASE_MARGIN = 20.0;
     static std::pair<double, double> view_center = {0, 0};
 
     // 检查输入
@@ -181,6 +188,44 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
         ));
     }
     vehicle_rect_plot->update(rect_x, rect_y);
+
+    // 绘制双圆模型
+    std::vector<std::vector<double>> circle_x(2), circle_y(2); // 两个圆的坐标
+    const int num_points = 50; // 圆的离散点数
+    for (int k = 0; k < 2; k++) {
+      // 计算圆心全局坐标
+      double xc_local = CIRCLE_CENTERS[k].first;
+      double yc_local = CIRCLE_CENTERS[k].second;
+      double xc_global = x + xc_local * cos_theta - yc_local * sin_theta;
+      double yc_global = y + xc_local * sin_theta + yc_local * cos_theta;
+      // 生成圆的边界点
+      for (int i = 0; i <= num_points; i++) {
+        double phi = 2.0 * M_PI * i / num_points;
+        circle_x[k].push_back(xc_global + CIRCLE_RADIUS * cos(phi));
+        circle_y[k].push_back(yc_global + CIRCLE_RADIUS * sin(phi));
+      }
+    }
+    // 初始化或更新圆的绘图对象
+    if (!circle1_plot) {
+        circle1_plot.reset(new matplotlibcpp::Plot(
+            "circle1_plot",
+            circle_x[0],
+            circle_y[0],
+            "m-" // 紫色线条
+        ));
+    } else {
+        circle1_plot->update(circle_x[0], circle_y[0]);
+    }
+    if (!circle2_plot) {
+        circle2_plot.reset(new matplotlibcpp::Plot(
+            "circle2_plot",
+            circle_x[1],
+            circle_y[1],
+            "m-" // 紫色线条
+        ));
+    } else {
+        circle2_plot->update(circle_x[1], circle_y[1]);
+    }
 
     // 更新自车历史轨迹
     if (!ego_plot) {
