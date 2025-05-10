@@ -1,80 +1,82 @@
 ﻿#ifndef ILQR_H
-    #define ILQR_H 
-    #include <Eigen/Eigen>
-    #include <algorithm>
-    #include <cmath>
-    using namespace Eigen;
-    // #define M_PI 3.1415
-    typedef Vector4d State;
-    typedef Vector2d Control;
+#define ILQR_H
+#include <Eigen/Eigen>
+#include <algorithm>
+#include <cmath>
+using namespace Eigen;
+// #define M_PI 3.1415
+typedef Vector4d State;
+typedef Vector2d Control;
 
-    struct Arg{
-        double following_distance = 10;
-        //车辆参数
-        double ego_rad = 3;
-        double lf      = 1.6;
-        double lr      =  1.13;
-        double len       =  2.73;
-        double width   =  2;
-        // 仿真参数
-        double tf = 1000;
-        double dt = 0.1;
-        //CILQR参数
-        int N = 20; //Horizen
-        double tol = 1e-3;
-        double rel_tol = 1e-5;
-        int max_iter = 50;
-        double lamb_init = 1;
-        double lamb_factor = 2;
-        double lamb_max = 100;
-        //纯跟踪参数
-        double kv = 0.3; //前视距离系数
-        double kp = 0.8; //速度P控制器系数
-        double ld0 = 3;  //基础前瞻距离
-        double ld_min = 3;
-        double ld_max = 20;
-        //代价参数
-        double desire_speed = 10;
-        double desire_heading = 0;
-        bool if_cal_obs_cost = true;
-        bool if_cal_lane_cost = true;
-        bool if_cal_steer_cost = true;
-        //最大转向约束
-        double steer_angle_max = 1;
-        double steer_max_q1 = 1;
-        double steer_max_q2 = 1;
-        //最小转向约束
-        double steer_angle_min = -1;
-        double steer_min_q1 = 1;
-        double steer_min_q2 = 1;
-        //道路约束
-        double trace_safe_width_left = 4;
-        double trace_safe_width_right = 4;
-        double lane_q1 = 5;
-        double lane_q2 = 5;
-        //障碍约束
-        double obs_q1 = 5;
-        double obs_q2 = 5;
-        double obs_length = 2;
-        double obs_width = 1;
-        double safe_a_buffer = 2;
-        double safe_b_buffer = 0.5;
-        // double buff = 0;
-        // double obs_rad = 1 + buff;
-        //QR矩阵
-        Matrix4d Q;
-        Matrix2d R;
-        //横向偏移代价
-        double ref_weight = 3;
-        Arg() { // 在构造函数中初始化矩阵
-            Q << 0, 0, 0, 0, 
-                      0, 0, 0, 0,
-                      0, 0, 1, 0,
-                      0, 0, 0, 1;
+struct Arg
+{
+    bool is_following = false;
+    double following_distance = 20;
+    // 车辆参数
+    double ego_circle_rad = 1.46;
+    double front_circle_center_to_ego_center = 1.46;
+    double rear_circle_center_to_ego_center = -1.46;
+    double lf = 1.6;
+    double lr = 1.13;
+    double len = 4.8;
+    double width = 2.25;
+    // 仿真参数
+    double tf = 1000;
+    double dt = 0.1;
+    // CILQR参数
+    int N = 20; // Horizen
+    double tol = 1e-3;
+    int max_iter = 50;
+    double lamb_init = 1;
+    double lamb_factor = 2;
+    double lamb_max = 100;
+    // 纯跟踪参数
+    double kv = 0.3; // 前视距离系数
+    double kp = 0.8; // 速度P控制器系数
+    double ld0 = 3;  // 基础前瞻距离
+    double ld_min = 3;
+    double ld_max = 20;
+    // 代价参数
+    double desire_speed = 10;
+    double desire_heading = 0;
+    bool if_cal_obs_cost = true;
+    bool if_cal_lane_cost = true;
+    bool if_cal_steer_cost = true;
+    // 最大转向约束
+    double steer_angle_max = 1;
+    double steer_max_q1 = 1;
+    double steer_max_q2 = 1;
+    // 最小转向约束
+    double steer_angle_min = -1;
+    double steer_min_q1 = 1;
+    double steer_min_q2 = 1;
+    // 道路约束
+    double trace_safe_width_left = 4;
+    double trace_safe_width_right = 4;
+    double lane_q1 = 100;
+    double lane_q2 = 5;
+    // 障碍约束
+    double obs_q1 = 5;
+    double obs_q2 = 5;
+    double obs_length = 2;
+    double obs_width = 1;
+    double safe_a_buffer = 0;
+    double safe_b_buffer = 0;
+    // QR矩阵
+    Matrix4d Q;
+    Matrix2d R;
+    // 横向偏移代价
+    double ref_weight = 1.0;
+    Arg()
+    { // 在构造函数中初始化矩阵
+        Q << 0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1;
 
-            R <<    1,    0,
-                        0,      100;
-        }
+        R << 1, 0,
+            0, 100;
+    }
     };
     //路点结构体
     struct Point{
@@ -106,16 +108,16 @@
     inline size_t find_closest_point(const std::vector<Point>& path,const State& state){
         size_t nearest_index = 0;
         double min_distance =   std::numeric_limits<double>::max();
-         Point point = {state(0), state(1),0};
-         for (size_t i = 0; i < path.size(); ++i) {
+        Point point = {state(0), state(1),0};
+        for (size_t i = 0; i < path.size(); ++i) {
 
         double dist = distance(path[i], point);
         if (dist < min_distance) {
             min_distance = dist;
             nearest_index = i;
+            }
         }
-    }
-    return nearest_index;
+        return nearest_index;
     }
     //角度归一化到[-π, π]
     inline double angle_wrap(double theta) {
@@ -153,15 +155,15 @@
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 3;
-            double lf      = 1.6;
-            double lr      =  1.13;
-            double len       =  2.73;
-            double width   =  2;
-            double dt = 0.1;
-            size_t N = 50;
+            double ego_circle_rad;
+            double lf;
+            double lr;
+            double len;
+            double width;
+            double dt;
+            size_t N;
             SystemModel() = default;
-            SystemModel(double dt,size_t N):dt(dt),N(N){};
+            SystemModel(Arg arg):ego_circle_rad(arg.ego_circle_rad),lf(arg.lf),lr(arg.lr),len(arg.len),width(arg.width),dt(arg.dt),N(arg.N){};
             State dynamics(const State& X, const Control& U);
             Matrix4d get_jacobian_state(const Vector4d& X, const Vector2d& U);
             Matrix<double,4,2> get_jacobian_control(const Vector4d& X, const Vector2d& U);
@@ -198,7 +200,7 @@
             };
             //设置or获取局部路径
             void set_local_plan(){
-                size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),0.0) + 20);
+                size_t num_points_to_extract = static_cast<size_t>((std::max<double>((state[3] * model.dt * model.N),0.0) + 20) * 10);
                 this->local_plan.set_plan(this->global_plan,this->state,num_points_to_extract);
             };
             void set_local_plan_following(State target_state,double following_distance){
@@ -280,6 +282,7 @@
             }
             size_t size() const { return controls.size(); }
         };
+        
     struct Solution {
         Solution(){}
         Solution(Trajectory ego_trj,ControlSequence control_sequence){
@@ -327,7 +330,7 @@
         public:
             //构造函数
             CILQRSolver(const Vehicle& ego, const Arg& arg) 
-            : ego(ego), obs(obs), arg(arg), 
+            : ego(ego), arg(arg), 
             k(arg.N, Vector2d::Zero()),
             K(arg.N,MatrixXd::Zero(2,4)),
             df_dx(arg.N,MatrixXd::Zero(4,4)),
@@ -346,6 +349,11 @@
             void set_global_plan(const GlobalPlan& global_plan){
                 ego.set_global_plan(global_plan);
             }
+            void set_global_plan(const std::vector<Point>& waypoints){
+                GlobalPlan global_plan;
+                global_plan.set_plan(waypoints);
+                ego.set_global_plan(global_plan);
+            }   
 
     };
 #endif

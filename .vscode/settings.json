@@ -58,6 +58,11 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp",
         "bit": "cpp",
-        "eigen": "cpp"
+        "eigen": "cpp",
+        "csignal": "cpp",
+        "typeindex": "cpp",
+        "condition_variable": "cpp",
+        "mutex": "cpp",
+        "variant": "cpp"
     }
 }
