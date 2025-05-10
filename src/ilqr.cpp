@@ -34,7 +34,7 @@ void LocalPlan::set_plan(const GlobalPlan& global_plan,const State& vehicle_stat
     // 提取后续的点(数量根据速度动态调整,传进来的num_points_to_extract已经是调整过的了)
     size_t end_index = std::min(nearest_index + num_points_to_extract, global_points.size());
     this->points.assign(global_points.begin() + nearest_index, global_points.begin() + end_index);
-    while(this->points.size() < num_points_to_extract){
+        while(this->points.size() < num_points_to_extract){
          this->points.push_back(this->points.back());
     }
 }
@@ -111,15 +111,15 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
 
 
     //如果接近终点就把期望速度置0
-    Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/2];
+    Point local_first_point = this->ego.get_local_plan().get_points().front();
     Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
     static bool is_near_end = false;
-    if(local_middle_point == global_last_point || is_near_end){
-        arg.desire_speed = 1;
-        arg.Q<<10,0,0,0,
-                        0,10,0,0,
-                        0,0,10,0,
-                        0,0,0,10;
+    if(local_first_point == global_last_point || is_near_end){
+        arg.desire_speed = 0.0;
+        arg.Q<<0,0,0,0,
+                0,0,0,0,
+                0,0,10,0,
+                0,0,0,10;
         // arg.desire_heading = 0;
         // arg.Q(3,3) = 0;
         std::cout<<"接近终点!!!!!!!!!"<<std::endl;
@@ -714,7 +714,7 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
         // if (delta_cost/(delta_V) <10 && delta_cost/(delta_V)>1e-4) 
         if (delta_cost < 0)
         {
-             found = true;
+            found = true;
             break;
         } else {
             alpha *= 0.5;

@@ -28,7 +28,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
              const std::vector<std::vector<double>>& ego_log,
              const std::vector<Trajectory>& total_obs_traj,
              const Solution& solution,
-             const Arg& arg) 
+             const Arg& arg)
 {       
     namespace plt = matplotlibcpp;
     // 静态绘图对象
@@ -49,7 +49,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     };
     // 动态视图参数
     constexpr double FOLLOW_FACTOR = 0.7;
-    constexpr double BASE_MARGIN = 20.0;
+    constexpr double BASE_MARGIN = 30.0;
     static std::pair<double, double> view_center = {0, 0};
 
     // 检查输入
@@ -256,6 +256,6 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     }
     plt::grid(true);
     plt::pause(0.001); 
-   plt::draw();
+    plt::draw();
 
 }
