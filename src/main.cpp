@@ -53,7 +53,7 @@ void set_default_params(Arg& arg) {
     arg.desire_speed = 5;
     arg.desire_heading = 0;
     arg.if_cal_obs_cost = true;
-    arg.if_cal_lane_cost = false;
+    arg.if_cal_lane_cost = true;
     arg.if_cal_steer_cost = true;
 
     // 转向约束
@@ -75,8 +75,8 @@ void set_default_params(Arg& arg) {
     arg.obs_q2 = 10.447458;
     arg.obs_length = 2;
     arg.obs_width = 1;
-    arg.safe_a_buffer = 0.5;
-    arg.safe_b_buffer = 0.25;
+    arg.safe_a_buffer = 1.0;
+    arg.safe_b_buffer = 0.4;
 
     // 横向偏移代价       
     arg.ref_weight = 3.0;
@@ -102,10 +102,12 @@ ScenarioConfig configure_scenario(Scenario type) {
     switch (type) {
         case DYNAMIC_COLLISION_AVOID:
             config.init_states = {
-                {80, 0.5, 0, 2}, {50, 2, 0, 1}, {70, -2, 0, 1},
+                {80, 0.5, 0, 2}, {50, 2, 0, 5}, {70, -2, 0, 1},
                 {50, 2, 0, 0}, {70, -2, 0, 0}, {90, 2, 0, 5},
-                {110, -2, 0, 2}, {30, 2, -M_PI/2, 1}, {70, -2, M_PI/2, 0.5}
+                {110, -2, 0, 5}, {30, 2, -M_PI/2, 1}, {70, -2, M_PI/2, 0.5}
             };
+            config.arg.obs_length = 5.0;
+            config.arg.obs_width = 2.0;
             config.arg.desire_speed = 10;
             break;
 
@@ -127,16 +129,16 @@ ScenarioConfig configure_scenario(Scenario type) {
                 {70, -4, -M_PI/32, 0}, {90, 2.5, M_PI/32, 0}, {90, -4, M_PI/32, 0},
                 {110, 4, M_PI/64, 0}, {110, -2.5, M_PI/50, 0}
             };
-            config.arg.obs_length = 20;
+            config.arg.obs_length = 15;
             config.arg.obs_width = 2.5;
-            config.arg.safe_b_buffer = 0.0;
-            config.arg.ref_weight = 0.0;
+            config.arg.safe_b_buffer = 0.1;
+            config.arg.ref_weight = 3.0;
             break;
 
         case FOLLOWING:
-            config.init_states = {{30, 0, 0, 5}};
+            config.init_states = {{10, 0, 0, 4}};
             config.arg.is_following = true;
-            config.arg.following_distance = 10;
+            config.arg.following_distance = 5;
             config.arg.Q << 1, 0, 0, 0,
                                             0, 1, 0, 0,
                                             0, 0, 1, 0,
@@ -145,7 +147,7 @@ ScenarioConfig configure_scenario(Scenario type) {
 	case CUSTOM:
 	    config.arg.obs_length = 2;
 	    config.arg.obs_width = 100;
-	    config.init_states = {{50,0, 0, 0}};
+	    // config.init_states = {{50,0, 0, 0}};
 
 	    break;
 
@@ -194,7 +196,7 @@ void update_obstacle_trajectories(std::vector<Trajectory>& trajectories, int hor
 
 // 主函数
 int main() {
-    Scenario scenario_type = Scenario::DYNAMIC_COLLISION_AVOID; // 可选场景
+    Scenario scenario_type = Scenario::NARROW_CORRIDOR; // 可选场景
 
     // 初始化参数和障碍物
     ScenarioConfig config = configure_scenario(scenario_type);
