@@ -108,16 +108,16 @@ struct Arg
     inline size_t find_closest_point(const std::vector<Point>& path,const State& state){
         size_t nearest_index = 0;
         double min_distance =   std::numeric_limits<double>::max();
-         Point point = {state(0), state(1),0};
-         for (size_t i = 0; i < path.size(); ++i) {
+        Point point = {state(0), state(1),0};
+        for (size_t i = 0; i < path.size(); ++i) {
 
         double dist = distance(path[i], point);
         if (dist < min_distance) {
             min_distance = dist;
             nearest_index = i;
+            }
         }
-    }
-    return nearest_index;
+        return nearest_index;
     }
     //角度归一化到[-π, π]
     inline double angle_wrap(double theta) {
@@ -200,7 +200,7 @@ struct Arg
             };
             //设置or获取局部路径
             void set_local_plan(){
-                size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),0.0) + 20);
+                size_t num_points_to_extract = static_cast<size_t>((std::max<double>((state[3] * model.dt * model.N),0.0) + 20) * 10);
                 this->local_plan.set_plan(this->global_plan,this->state,num_points_to_extract);
             };
             void set_local_plan_following(State target_state,double following_distance){

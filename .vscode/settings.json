@@ -60,6 +60,9 @@
         "bit": "cpp",
         "eigen": "cpp",
         "csignal": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "condition_variable": "cpp",
+        "mutex": "cpp",
+        "variant": "cpp"
     }
 }
