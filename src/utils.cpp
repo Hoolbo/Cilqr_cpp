@@ -12,15 +12,16 @@
 #include <windows.h>
 #endif
 
-std::vector<std::vector<double>> load_map() {
+std::vector<std::vector<double>> load_map(double startx, double starty, double theta) {
     // 返回一个示例地图数据，实际应该从文件加载
     std::vector<std::vector<double>> map_data(3);
-    
+    double costheta = cos(theta);
+    double sintheta = sin(theta); 
     // 生成一条简单的直线路径作为示例
     for (int i = 0; i < 1000; ++i) {
-        map_data[0].push_back(i * 0.1+30);  // x坐标
-        map_data[1].push_back(20);      // y坐标
-        map_data[2].push_back(0);      // heading
+        map_data[0].push_back(startx + i*0.1*costheta);  // x坐标
+        map_data[1].push_back(starty + i*0.1*sintheta);      // y坐标
+        map_data[2].push_back(theta);      // heading
     }
     
     return map_data;
@@ -408,7 +409,8 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
                   const Solution& solution,
                   const MapData* map_data,
                   const GlobalPlan& global_plan,
-                  const SystemModel& vehicle_model) {
+                  const SystemModel& vehicle_model,
+                  const Arg& arg) {
     
     // 保存数据到文件供Python脚本使用
     static int frame_count = 0;
@@ -558,11 +560,15 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
         if (!obs_traj.states.empty()) {
             data_file << "    \"x\": " << obs_traj.states[0][0] << ",\n";
             data_file << "    \"y\": " << obs_traj.states[0][1] << ",\n";
-            data_file << "    \"theta\": " << obs_traj.states[0][2] << "\n";
+            data_file << "    \"theta\": " << obs_traj.states[0][2] << ",\n";
+            data_file << "    \"length\": " << arg.obs_length << ",\n";
+            data_file << "    \"width\": " << arg.obs_width << "\n";
         } else {
             data_file << "    \"x\": 0,\n";
             data_file << "    \"y\": 0,\n";
-            data_file << "    \"theta\": 0\n";
+            data_file << "    \"theta\": 0,\n";
+            data_file << "    \"length\": " << arg.obs_length << ",\n";
+            data_file << "    \"width\": " << arg.obs_width << "\n";
         }
         data_file << "  },\n";
         

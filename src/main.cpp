@@ -37,11 +37,11 @@ int main(){
     std::cout << "Map data save operation completed." << std::endl;
     
     // Load semantic map data
-    std::vector<std::vector<double>> m_map_info = load_map();
+    std::vector<std::vector<double>> m_map_info = load_map(65,20,2.1);
     std::cout << "Semantic map loaded. Size: " << m_map_info.size() << std::endl;
 
     //填充路点
-    for(int i=0;i<300;i++){
+    for(int i=0;i<1000;i++){
         Point point(m_map_info[0][i],m_map_info[1][i],m_map_info[2][i]);
         way_points.push_back(point);
         global_plan_log[0].push_back(m_map_info[0][i]);
@@ -69,7 +69,7 @@ int main(){
     //障碍物初始化
     Trajectory obs_trj;
     for(int i=0;i<arg.N+1;i++){
-        obs_trj.push_back(State(40,22,0,0));
+        obs_trj.push_back(State(53,41,2,1));
     }
 
     //求解器初始化
@@ -81,7 +81,7 @@ int main(){
 
     //主循环
     // for(int i = 0;i<arg.tf/arg.dt;i++){
-    for(int i = 0;i<200;i++){
+    for(int i = 0;i<90;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
         // 问题求解
         clock_t start = clock();
@@ -107,7 +107,7 @@ int main(){
          std::cout<<"v  :   "<< cur_ctrl[0]<<std::endl;
          std::cout<<"omega  :   "<< cur_ctrl[1]<<std::endl;
         // if(i%3==0){
-            dynamic_plot(global_plan_log,ego_log,obs_trj,solution,&bitmap_map,global_plan,ego.get_model());
+            dynamic_plot(global_plan_log,ego_log,obs_trj,solution,&bitmap_map,global_plan,ego.get_model(),arg);
         // }
  
     }

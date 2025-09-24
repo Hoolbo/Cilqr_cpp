@@ -63,7 +63,8 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
     const Solution& solution,
     const MapData* map_data,
     const GlobalPlan& global_plan,
-    const SystemModel& vehicle_model);
+    const SystemModel& vehicle_model,
+    const Arg& arg);
 
 // Debug-only: draw bitmap map alone to verify matplotlib-cpp rendering; if output_path is non-empty, save to that file
 void draw_bitmap_debug(const MapData& map_data, const std::string& output_path = "");
@@ -72,7 +73,7 @@ void draw_bitmap_debug(const MapData& map_data, const std::string& output_path =
 void save_map_data(const MapData* map_data);
 
 // 地图和路径相关函数
-std::vector<std::vector<double>> load_map();
+std::vector<std::vector<double>> load_map(double startx=0, double starty=0, double theta=0);
 MapData load_bitmap_map(const std::string& file_path);
 SemanticMapData load_semantic_map(const std::string& file_path);
 void fill_global_path_points(std::vector<std::vector<double>>& global_plan_log);

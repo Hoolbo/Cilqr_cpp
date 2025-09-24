@@ -39,18 +39,25 @@ def load_map_data():
         print(f"Warning: Could not load map data from {map_file}: {e}")
         return None
 
-def draw_vehicle(ax, x, y, theta, gamma, color='blue', alpha=1.0, vehicle_type='ego', vehicle_model=None):
+def draw_vehicle(ax, x, y, theta, gamma, color='blue', alpha=1.0, vehicle_type='ego', vehicle_model=None, obstacle_data=None):
     """绘制车辆
     对于自车(ego): x, y是前轴中心位置，需要根据铰接角绘制前后两个车厢
     对于障碍物车辆: x, y是车辆中心位置，绘制单个矩形
     """
     # 使用车辆模型参数，如果没有提供则使用默认值
-    if vehicle_model:
+    if vehicle_type == 'ego' and vehicle_model:
         half_len = vehicle_model['box_length'] / 2.0
         half_wid = vehicle_model['width'] / 2.0
         lf = vehicle_model['lf']
         lr = vehicle_model['lr']
+    elif vehicle_type == 'obstacle' and obstacle_data:
+        # 使用障碍物数据中的尺寸信息
+        half_len = obstacle_data.get('length', 2.7) / 2.0
+        half_wid = obstacle_data.get('width', 2.0) / 2.0
+        lf = 1.6  # 障碍物不需要这些参数，但保留以防万一
+        lr = 1.13
     else:
+        # 默认值
         if vehicle_type == 'ego':
             half_len = 1.04
             half_wid = 1.0
@@ -90,8 +97,8 @@ def draw_vehicle(ax, x, y, theta, gamma, color='blue', alpha=1.0, vehicle_type='
             [front_axle_x - half_len * c - half_wid * s, front_axle_y - half_len * s + half_wid * c],
             [front_axle_x + half_len * c - half_wid * s, front_axle_y + half_len * s + half_wid * c]  # 闭合
         ])
-        ax.plot(front_corners[:, 0], front_corners[:, 1], color=color, alpha=alpha, linewidth=2)
-        ax.fill(front_corners[:, 0], front_corners[:, 1], color=color, alpha=0.3)
+        ax.plot(front_corners[:, 0], front_corners[:, 1], color=color, alpha=alpha, linewidth=1)
+        ax.fill(front_corners[:, 0], front_corners[:, 1], color=color, alpha=0.85)
         
         # 绘制后车厢（以后轴中心为基准）
         rear_corners = np.array([
@@ -101,8 +108,8 @@ def draw_vehicle(ax, x, y, theta, gamma, color='blue', alpha=1.0, vehicle_type='
             [rear_axle_x - half_len * rear_c - half_wid * rear_s, rear_axle_y - half_len * rear_s + half_wid * rear_c],
             [rear_axle_x + half_len * rear_c - half_wid * rear_s, rear_axle_y + half_len * rear_s + half_wid * rear_c]  # 闭合
         ])
-        ax.plot(rear_corners[:, 0], rear_corners[:, 1], color=color, alpha=alpha, linewidth=2)
-        ax.fill(rear_corners[:, 0], rear_corners[:, 1], color=color, alpha=0.3)
+        ax.plot(rear_corners[:, 0], rear_corners[:, 1], color=color, alpha=alpha, linewidth=1)
+        ax.fill(rear_corners[:, 0], rear_corners[:, 1], color=color, alpha=0.85)
         
         # 绘制从前轴中心到铰接点的连接线
         ax.plot([front_axle_x, hitch_x], [front_axle_y, hitch_y], 
@@ -124,8 +131,8 @@ def draw_vehicle(ax, x, y, theta, gamma, color='blue', alpha=1.0, vehicle_type='
             [x - half_len * c - half_wid * s, y - half_len * s + half_wid * c],
             [x + half_len * c - half_wid * s, y + half_len * s + half_wid * c]  # 闭合
         ])
-        ax.plot(corners[:, 0], corners[:, 1], color=color, alpha=alpha, linewidth=2)
-        ax.fill(corners[:, 0], corners[:, 1], color=color, alpha=0.3)
+        ax.plot(corners[:, 0], corners[:, 1], color=color, alpha=alpha, linewidth=1)
+        ax.fill(corners[:, 0], corners[:, 1], color=color, alpha=0.85)
 
 
 
@@ -158,15 +165,10 @@ def visualize_frame(data, frame_num, map_data=None, save_path=None):
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
     
-    # 绘制全局路径
-    global_plan = data.get('global_plan', {})
-    if global_plan.get('x') and global_plan.get('y'):
-        ax.plot(global_plan['x'], global_plan['y'], 'k-', linewidth=2, label='Global Plan')
-    
-    # 绘制全局路径日志
-    global_plan_log = data.get('global_plan_log', {})
-    if global_plan_log.get('x') and global_plan_log.get('y'):
-        ax.plot(global_plan_log['x'], global_plan_log['y'], 'k-.', linewidth=1, label='Global Plan Log')
+    # # 绘制全局路径
+    # global_plan = data.get('global_plan', {})
+    # if global_plan.get('x') and global_plan.get('y'):
+    #     ax.plot(global_plan['x'], global_plan['y'], 'k-', linewidth=1, label='Global Plan')
     
     # 绘制规划轨迹
     planned_traj = data.get('planned_trajectory', {})
@@ -193,7 +195,7 @@ def visualize_frame(data, frame_num, map_data=None, save_path=None):
         obs_y = obstacle.get('y', 0)
         obs_theta = obstacle.get('theta', 0)
         
-        draw_vehicle(ax, obs_x, obs_y, obs_theta, 0, color='cyan', vehicle_type='obstacle', vehicle_model=vehicle_model)
+        draw_vehicle(ax, obs_x, obs_y, obs_theta, 0, color='#FFCCE5', vehicle_type='obstacle', vehicle_model=vehicle_model, obstacle_data=obstacle)
     
     # 设置图形属性
     ax.set_xlabel('X (m)', fontsize=12)

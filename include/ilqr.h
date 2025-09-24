@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 10;
+        double desire_speed = 5;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = false;
@@ -40,31 +40,33 @@
         double steer_min_q1 = 1;
         double steer_min_q2 = 1;
         //道路约束
-        double trace_safe_width_left = 4;
-        double trace_safe_width_right = 4;
+        double trace_safe_width_left = 5;
+        double trace_safe_width_right = 5;
         double lane_q1 = 5;
         double lane_q2 = 3;
         //障碍约束
         double obs_q1 = 5;
-        double obs_q2 = 3;
-        double obs_length = 2.7;
-        double obs_width = 2;
+        double obs_q2 = 4;
+        // double obs_length = 2.7;
+        // double obs_width = 2;
+        double obs_length = 5;
+        double obs_width = 3;
         double safe_a_buffer = 5;
-        double safe_b_buffer = 1;
+        double safe_b_buffer = 4;
         // double buff = 0;
         // double obs_rad = 1 + buff;
         //QR矩阵
         Matrix4d Q;
         Matrix2d R;
         //横向偏移代价
-        double ref_weight = 0;
+        double ref_weight = 2;
         Arg() { // 在构造函数中初始化矩阵
-            Q << 1, 0, 0, 0, 
-                      0, 1, 0, 0,
-                      0, 0, 1, 0,
-                      0, 0, 0, 1;
+            Q << 0, 0, 0, 0, 
+                0, 0, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1;
 
-            R <<     1,     0,
+            R <<     2,     0,
                           0,    1;
         }
     };
@@ -130,12 +132,15 @@
     //系统模型
     class SystemModel{
         public:
-            double ego_rad = 2;
-            double lf      = 1.6;
-            double lr      =  1.13;
-            double len       =  2.73;
-            double width   =  2;
-            double box_length = 2;
+            double ego_rad = 7;
+            // double lf      = 1.6;
+            // double lr      =  1.13;
+            // double len       =  2.73;
+            double lf      = 3;
+            double lr      =  3;
+            double len       =  3;
+            double width   =  3;
+            double box_length = 5;
             double dt = 0.1;
             size_t N = 50;
             SystemModel() = default;

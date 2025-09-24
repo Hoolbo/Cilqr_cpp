@@ -420,7 +420,9 @@ double CILQRSolver::cal_cost(const Solution& solution){
     //计算控制代价
     for(int i=0;i<this->arg.N;i++){
         Control U = control_sequence[i];
-        double cost_ctrl = U.transpose() * arg.R * U;
+        Control U_ref = {arg.desire_speed,0};
+        Control U_e = U - U_ref;
+        double cost_ctrl = U_e.transpose() * arg.R * U_e;
         //计算前轮转角约束代价
         if(arg.if_cal_steer_cost){
             c = U.transpose() * P2 - arg.steer_angle_max;
@@ -476,6 +478,8 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
     Vector2d db_steer = Vector2d::Zero();
     Matrix2d ddb_steer = Matrix2d::Zero();
     Vector2d u = Vector2d::Zero();
+    Vector2d u_r = Vector2d::Zero();
+    Vector2d u_e = Vector2d::Zero();
 
     // 第一部分：状态相关导数
     for (int i = 0; i <= N; ++i) {
@@ -592,9 +596,10 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
     // 第二部分：控制相关导数
     for (int i = 0; i < N; ++i) {
         u = U[i];
-        
+        u_r = {arg.desire_speed,0};
+        u_e = u - u_r;
         // 基本控制代价导数
-        lu_base = 2 * arg.R * u;
+        lu_base = 2 * arg.R * u_e;
         luu_base = 2 * arg.R;
 
         if (arg.if_cal_steer_cost) {
