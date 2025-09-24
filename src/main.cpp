@@ -13,8 +13,14 @@ int main(){
     
     std::cout << "Variables initialized successfully." << std::endl;
     
+    // 地图选择 - 修改这里来切换不同的地图
+    // 可选地图: B201, B301, B302, B303, B304, B305, B306, B307, B308, B309, B310, B311, B312, B313, B314, B315, B316, B317, B318, B319, B320, B321, B322, B323, B324, B325, B326, B327, B328, B329, B330, B331, B332, B333, B334, B335, B336, B337, B338, B339, B340, B341, B342, B343, B344, B345, B346, B347, B348, B349, B350, B351, B352, B353, B354, B355, B356, B357, B358, B359, B360, B361, B362, B363, B364, B365, B366, B367, B368, B369, B370, B371, B372, B373, B374, B375, B376, B377, B378, B379, B380, B381, B382, B383, B384, B385, B386, B387, B388, B389, B390, B391, B392, B393, B394, B395, B396, B397, B398, B399, B400
+    std::string selected_map = "B204";  // 修改这里来选择不同的地图
+    std::string map_file = "Maps/bitmap/" + selected_map + "_global_map.json";
+    std::cout << "Loading map file: " << map_file << " (Selected: " << selected_map << ")" << std::endl;
+    
     // Load bitmap map data
-    MapData bitmap_map = load_bitmap_map("../Maps/bitmap/B206_global_map.json");
+    MapData bitmap_map = load_bitmap_map(map_file);
     std::cout << "Bitmap map loaded: " << bitmap_map.width << " x " << bitmap_map.height << std::endl;
     std::cout << "Map data size: " << bitmap_map.data.size() << std::endl;
     std::cout << "Map resolution: " << bitmap_map.resolution << std::endl;
@@ -26,7 +32,9 @@ int main(){
     }
     
     // 保存地图数据到单独的文件（只在程序开始时保存一次）
+    std::cout << "About to save map data..." << std::endl;
     save_map_data(&bitmap_map);
+    std::cout << "Map data save operation completed." << std::endl;
     
     // Load semantic map data
     std::vector<std::vector<double>> m_map_info = load_map();
