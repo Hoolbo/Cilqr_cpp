@@ -26,7 +26,7 @@
         double ld_min = 3;
         double ld_max = 20;
         //代价参数
-        double desire_speed = 0;
+        double desire_speed = 10;
         double desire_heading = 0;
         bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = false;
@@ -64,7 +64,7 @@
                       0, 0, 1, 0,
                       0, 0, 0, 1;
 
-            R <<     0.1,     0,
+            R <<     1,     0,
                           0,    1;
         }
     };
@@ -135,6 +135,7 @@
             double lr      =  1.13;
             double len       =  2.73;
             double width   =  2;
+            double box_length = 2;
             double dt = 0.1;
             size_t N = 50;
             SystemModel() = default;
@@ -245,9 +246,19 @@
         Solution(const Solution& solution){
             this->ego_trj = solution.ego_trj;
             this->control_sequence = solution.control_sequence;
+            this->converged = solution.converged;
+            this->iterations = solution.iterations;
+            this->final_cost = solution.final_cost;
+            this->solve_time_ms = solution.solve_time_ms;
         }
         Trajectory ego_trj;
         ControlSequence control_sequence;
+        
+        // 收敛信息
+        bool converged = false;
+        int iterations = 0;
+        double final_cost = 0.0;
+        double solve_time_ms = 0.0;
     };
 
 

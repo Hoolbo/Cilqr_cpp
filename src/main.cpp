@@ -4,14 +4,36 @@
 #include <ctime>
 
 int main(){
+    std::cout << "=== CILQR Program Starting ===" << std::endl;
+    std::cout << "Initializing variables..." << std::endl;
+    
+    // Initialize variables
     std::vector<Point> way_points;
-    std::vector<std::vector<double>> global_plan_log(3),ego_log(4);
-
-    //获取地图信息
+    std::vector<std::vector<double>> global_plan_log(3), ego_log(4);
+    
+    std::cout << "Variables initialized successfully." << std::endl;
+    
+    // Load bitmap map data
+    MapData bitmap_map = load_bitmap_map("../Maps/bitmap/B206_global_map.json");
+    std::cout << "Bitmap map loaded: " << bitmap_map.width << " x " << bitmap_map.height << std::endl;
+    std::cout << "Map data size: " << bitmap_map.data.size() << std::endl;
+    std::cout << "Map resolution: " << bitmap_map.resolution << std::endl;
+    std::cout << "Map max_elevation: " << bitmap_map.max_elevation << std::endl;
+    if (!bitmap_map.data.empty()) {
+        std::cout << "First row size: " << bitmap_map.data[0].size() << std::endl;
+        // 暂时注释掉静态地图生成，专注于动态显示
+        // draw_bitmap_debug(bitmap_map, "test_map_output.png");
+    }
+    
+    // 保存地图数据到单独的文件（只在程序开始时保存一次）
+    save_map_data(&bitmap_map);
+    
+    // Load semantic map data
     std::vector<std::vector<double>> m_map_info = load_map();
+    std::cout << "Semantic map loaded. Size: " << m_map_info.size() << std::endl;
 
     //填充路点
-    for(int i=300;i<1000;i++){
+    for(int i=0;i<300;i++){
         Point point(m_map_info[0][i],m_map_info[1][i],m_map_info[2][i]);
         way_points.push_back(point);
         global_plan_log[0].push_back(m_map_info[0][i]);
@@ -29,7 +51,7 @@ int main(){
 
     //车辆模型初始化
     Vehicle ego;
-    ego.set_state(m_map_info[0][300],m_map_info[1][300],m_map_info[2][300],0);
+    ego.set_state(m_map_info[0][50],m_map_info[1][50],m_map_info[2][50],0);
     ego.set_global_plan(global_plan);
     ego.set_model(SystemModel(arg.dt,arg.N));
     for(int i=0;i<4;i++){
@@ -39,7 +61,7 @@ int main(){
     //障碍物初始化
     Trajectory obs_trj;
     for(int i=0;i<arg.N+1;i++){
-        obs_trj.push_back(State(380,1,0,0));
+        obs_trj.push_back(State(40,22,0,0));
     }
 
     //求解器初始化
@@ -51,7 +73,7 @@ int main(){
 
     //主循环
     // for(int i = 0;i<arg.tf/arg.dt;i++){
-    for(int i = 0;i<2000;i++){
+    for(int i = 0;i<200;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
         // 问题求解
         clock_t start = clock();
@@ -77,7 +99,7 @@ int main(){
          std::cout<<"v  :   "<< cur_ctrl[0]<<std::endl;
          std::cout<<"omega  :   "<< cur_ctrl[1]<<std::endl;
         // if(i%3==0){
-            my_plot(global_plan_log,ego_log,obs_trj,solution);
+            dynamic_plot(global_plan_log,ego_log,obs_trj,solution,&bitmap_map,global_plan,ego.get_model());
         // }
  
     }

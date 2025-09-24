@@ -1,4 +1,5 @@
 #include <cmath>
+#include <ctime>
 #include <iostream>
 #include "ilqr.h"
 using namespace Eigen;
@@ -139,7 +140,14 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
 
     converged = false;
     
+    // 记录收敛信息
+    clock_t start_time = clock();
+    int iterations_count = 0;
+    
     for (int iter = 0; iter < arg.max_iter; ++iter) {
+        iterations_count = iter + 1;
+        std::cout << "Iteration: " << iter + 1 << ", Cost: " << J_old << ", Lambda: " << lamb << std::endl;
+        
         // // 备份当前解
         // Solution old_solution = current_solution;
 
@@ -231,6 +239,25 @@ Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
         std::cerr << "Unconverged::Maxmum iteration" << std::endl;
         converged = false;
     }
+    
+    // 记录求解时间
+    clock_t end_time = clock();
+    double solve_time = static_cast<double>(end_time - start_time) / CLOCKS_PER_SEC;
+    
+    // 填入收敛信息到Solution中
+    current_solution.converged = converged;
+    current_solution.iterations = iterations_count;
+    current_solution.final_cost = J_old;
+    current_solution.solve_time_ms = solve_time * 1000;
+    
+    // 输出收敛信息
+    std::cout << "CILQR Solver Summary:" << std::endl;
+    std::cout << "  Converged: " << (converged ? "Yes" : "No") << std::endl;
+    std::cout << "  Iterations: " << iterations_count << "/" << arg.max_iter << std::endl;
+    std::cout << "  Final Cost: " << J_old << std::endl;
+    std::cout << "  Final Lambda: " << lamb << std::endl;
+    std::cout << "  Solve Time: " << solve_time * 1000 << " ms" << std::endl;
+    
     // pre_solution = current_solution;
     return current_solution;
 }
