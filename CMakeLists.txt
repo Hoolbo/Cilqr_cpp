@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.18)
 project(Cilqr_cpp)
 
+# Set a common output directory for all executables
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -77,4 +80,6 @@ message(STATUS "Full linking restored")
 # Windows 专项小优化（可选）：避免 <windows.h> 与 std::min/max 冲突、启用数学常量
 if(MSVC)
     target_compile_definitions(main PRIVATE NOMINMAX _USE_MATH_DEFINES)
+    # 统一源文件编码为 UTF-8，消除 C4819 警告并确保中文日志正常显示
+    target_compile_options(main PRIVATE /utf-8)
 endif()

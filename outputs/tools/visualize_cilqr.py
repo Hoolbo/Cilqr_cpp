@@ -17,6 +17,7 @@ import os
 import glob
 from matplotlib.patches import Rectangle
 import math
+import argparse
 
 def load_data(filename):
     """加载JSON数据文件"""
@@ -165,10 +166,10 @@ def visualize_frame(data, frame_num, map_data=None, save_path=None):
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
     
-    # # 绘制全局路径
-    # global_plan = data.get('global_plan', {})
-    # if global_plan.get('x') and global_plan.get('y'):
-    #     ax.plot(global_plan['x'], global_plan['y'], 'k-', linewidth=1, label='Global Plan')
+    # 绘制全局路径
+    global_plan = data.get('global_plan', {})
+    if global_plan.get('x') and global_plan.get('y'):
+        ax.plot(global_plan['x'], global_plan['y'], 'k-', linewidth=1, label='Global Plan')
     
     # 绘制规划轨迹
     planned_traj = data.get('planned_trajectory', {})
@@ -189,13 +190,27 @@ def visualize_frame(data, frame_num, map_data=None, save_path=None):
         draw_vehicle(ax, ego_x, ego_y, ego_theta, ego_gamma, color='blue', vehicle_type='ego', vehicle_model=vehicle_model)
     
     # 绘制障碍物
-    obstacle = data.get('obstacle', {})
-    if obstacle:
-        obs_x = obstacle.get('x', 0)
-        obs_y = obstacle.get('y', 0)
-        obs_theta = obstacle.get('theta', 0)
-        
-        draw_vehicle(ax, obs_x, obs_y, obs_theta, 0, color='#FFCCE5', vehicle_type='obstacle', vehicle_model=vehicle_model, obstacle_data=obstacle)
+    obstacles = data.get('obstacles', [])
+    if obstacles:
+        # 为多个障碍物使用不同颜色
+        obstacle_colors = ['#FFCCE5', '#FFE5CC', '#E5CCFF', '#CCFFE5', '#CCFFFF']
+        for i, obstacle in enumerate(obstacles):
+            obs_x = obstacle.get('x', 0)
+            obs_y = obstacle.get('y', 0)
+            obs_theta = obstacle.get('theta', 0)
+            
+            # 循环使用颜色
+            color = obstacle_colors[i % len(obstacle_colors)]
+            draw_vehicle(ax, obs_x, obs_y, obs_theta, 0, color=color, vehicle_type='obstacle', vehicle_model=vehicle_model, obstacle_data=obstacle)
+    else:
+        # 兼容旧格式：单个obstacle字段
+        obstacle = data.get('obstacle', {})
+        if obstacle:
+            obs_x = obstacle.get('x', 0)
+            obs_y = obstacle.get('y', 0)
+            obs_theta = obstacle.get('theta', 0)
+            
+            draw_vehicle(ax, obs_x, obs_y, obs_theta, 0, color='#FFCCE5', vehicle_type='obstacle', vehicle_model=vehicle_model, obstacle_data=obstacle)
     
     # 设置图形属性
     ax.set_xlabel('X (m)', fontsize=12)
@@ -213,8 +228,8 @@ def visualize_frame(data, frame_num, map_data=None, save_path=None):
     
     plt.close()
 
-def process_all_frames(data_dir='../data'):
-    """处理所有数据帧"""
+def process_all_frames(data_dir='../data', limit=None):
+    """处理所有数据帧（可选限制帧数）"""
     # 获取脚本所在目录的绝对路径
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # 构建数据目录的绝对路径
@@ -231,6 +246,15 @@ def process_all_frames(data_dir='../data'):
     # 查找所有数据文件
     data_files = glob.glob(os.path.join(data_dir, 'cilqr_data_*.json'))
     data_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
+    
+    if limit is not None:
+        try:
+            limit = int(limit)
+            if limit > 0:
+                data_files = data_files[:limit]
+                print(f"Limiting to first {limit} frames")
+        except Exception as e:
+            print(f"Invalid limit '{limit}': {e}")
     
     print(f"Found {len(data_files)} data files")
     
@@ -311,11 +335,17 @@ if __name__ == '__main__':
     print("地图显示：可行驶路径(白色) | 不可行驶路径(黑色)")
     print()
     
-    # 处理所有帧
-    process_all_frames()
+    parser = argparse.ArgumentParser(description='CILQR数据可视化工具')
+    parser.add_argument('--limit', type=int, default=None, help='限制处理的帧数，例如 --limit 50 只处理前50帧')
+    parser.add_argument('--skip-animation', action='store_true', help='跳过生成GIF动画')
+    args = parser.parse_args()
+
+    # 处理所有帧（可选限制）
+    process_all_frames(limit=args.limit)
     
-    # 创建动画
-    create_animation()
+    # 创建动画（可选跳过）
+    if not args.skip_animation:
+        create_animation()
     
     print("\n可视化完成！")
     print("图像保存位置: ../images/cilqr_visualizations/")

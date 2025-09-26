@@ -116,10 +116,11 @@ Vehicle::Vehicle(){
 }
 
 //CILQRSolver类方法
-Solution CILQRSolver::solve(const State& init_state,const Trajectory& obs) {
+Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory>& obs_list) {
     
     ego.set_state(init_state);
-    this->obs = obs;
+    // 使用传入的obs_list参数更新成员变量
+    this->obs_list = obs_list;
     // 初始化局部路径和初始解
     ego.set_local_plan();
 
@@ -327,263 +328,187 @@ double CILQRSolver::cal_cost(const Solution& solution){
     if (std::isnan(solution.ego_trj.get_states()[0][0])) {
         throw std::runtime_error("trajectory contains NaN values");
     }
-    Vector2d P2;
-    P2<<0,1;
-    auto control_sequence = solution.control_sequence.get_control_sequence();
-    auto trj              = solution.ego_trj.get_states();
-    double cost_state = 0;
-    double cost_state_ref = 0;
-    double cost_ctrl = 0;; 
-    double cost_lane = 0;
-    double cost_obs = 0;
-    double cost_steer = 0;
-    double J_state_total= 0;
+    Vector2d P2; P2 << 0, 1;
+    const auto& control_sequence = solution.control_sequence.get_control_sequence();
+    const auto& trj = solution.ego_trj.get_states();
+
+    double J_state_total = 0;
     double J_ctrl_total = 0;
     double J_obs_total = 0;
-    double J_constraint_total = 0;
-    double J_steer_total = 0;
     double J_lane_total = 0;
-    double l;
-    double c_left;
-    double cost_lane_left;
-    double c_right;
-    double cost_lane_right;
-    double dx;
-    double dy;
-    double dist;
-    double safe_distance;
-    double c;
-    double cost_max_steer;
-    double cost_min_steer;
+    double J_steer_total = 0;
 
-    //计算状态代价
-    for(int i=0;i<arg.N+1;i++){
+    // 状态相关代价
+    for (int i = 0; i < arg.N + 1; ++i) {
+        // 每个时间步重置临时代价
+        double cost_state = 0;
+        double cost_state_ref = 0;
+        double cost_lane = 0;
+        double cost_obs = 0;
 
-        State X = trj[i];
-        size_t index =  find_closest_point(ego.get_local_plan().get_points(),X);
-        size_t match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
-        // match_index = index;
-        Point X_r_point = ego.get_local_plan().get_points()[match_index];
-        //铰接角期望到0
+        const State& X = trj[i];
+        size_t index = find_closest_point(ego.get_local_plan().get_points(), X);
+        size_t match_index = index == ego.get_local_plan().get_points().size() - 1 ? index : index + 1;
+        const Point& X_r_point = ego.get_local_plan().get_points()[match_index];
         State X_r = {X_r_point.x, X_r_point.y, X_r_point.heading, 0};
         State X_e = X - X_r;
         cost_state = X_e.transpose() * arg.Q * X_e;
-        //计算横向偏移代价
-        Vector2d dX,nor_r;
-        dX<< X_e[0],X_e[1];
-        nor_r<< -sin(X_r_point.heading),cos(X_r_point.heading);
-        cost_state_ref = pow(dX.dot(nor_r),2) * arg.ref_weight;
-        //计算超越车道边界代价  
-        if(arg.if_cal_lane_cost){
-            //左侧超越车道边界代价
-            l = dX.transpose() * nor_r;
-            c_left = l - arg.trace_safe_width_left;
-            cost_lane_left = arg.lane_q1*exp(arg.lane_q2*c_left);
-            //右侧超越车道边界代价
-            c_right = -l - arg.trace_safe_width_right;
-            cost_lane_right = arg.lane_q1*exp(arg.lane_q2*c_right);
+
+        // 横向偏移参考代价
+        Vector2d dX, nor_r; dX << X_e[0], X_e[1];
+        nor_r << -sin(X_r_point.heading), cos(X_r_point.heading);
+        cost_state_ref = pow(dX.dot(nor_r), 2) * arg.ref_weight;
+
+        // 车道边界代价
+        if (arg.if_cal_lane_cost) {
+            double l = dX.transpose() * nor_r;
+            double c_left = l - arg.trace_safe_width_left;
+            double c_right = -l - arg.trace_safe_width_right;
+            double cost_lane_left = arg.lane_q1 * exp(arg.lane_q2 * c_left);
+            double cost_lane_right = arg.lane_q1 * exp(arg.lane_q2 * c_right);
             cost_lane = cost_lane_left + cost_lane_right;
         }
-        //计算障碍物代价
-        if(arg.if_cal_obs_cost){
-            //计算与障碍物的距离
-            if(i >= obs.get_states().size()){ // 添加长度检查
-                std::cerr << "Obs trajectory error" << std::endl;
-                break;
+
+        // 障碍物代价（多障碍物累加）
+        if (arg.if_cal_obs_cost) {
+            for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
+                const Trajectory& obs = obs_list[obs_idx];
+                if (i >= obs.get_states().size()) continue; // 长度保护
+                const State& obs_state = obs.get_states()[i];
+                double dx = X[0] - obs_state[0];
+                double dy = X[1] - obs_state[1];
+                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
+                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
+                Vector2d dX_obs(dx, dy);
+                Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
+                Vector2d dX_obs_cord = R * dX_obs;
+                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                cost_obs += arg.obs_q1 * exp(arg.obs_q2 * c);
             }
-            State obs_state = obs.get_states()[i];
-            dx = X[0] - obs_state[0];  // Ego车与障碍物的x坐标差
-            dy = X[1] - obs_state[1];  // Ego车与障碍物的y坐标差
-            Vector2d dX_obs = {dx,dy};
-            double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-            double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-            Matrix2d rotation_matrix;
-            rotation_matrix << cos(obs_state[2]), sin(obs_state[2]), 
-                              -sin(obs_state[2]), cos(obs_state[2]);
-            Vector2d dX_obs_cord =  rotation_matrix * dX_obs;
-            c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2)+pow(dX_obs_cord[1],2)/pow(b,2));
-            cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
-            // dist = sqrt(dx * dx + dy * dy);       // 计算距离
-            
-            // //障碍物代价计算：若距离小于安全阈值，产生代价
-            // safe_distance = arg.obs_rad + ego.get_model().ego_rad; // 安全距离
-            // //c小于0满足约束  c大于0违反约束
-            // c = safe_distance - dist;   
-            // //返回代价
-            // cost_obs = arg.obs_q1*exp(arg.obs_q2*c);
-        } 
-        J_obs_total += cost_obs;
-        J_lane_total += cost_lane;
+        }
+
         J_state_total += cost_state + cost_state_ref;
+        J_lane_total += cost_lane;
+        J_obs_total += cost_obs;
     }
 
-    //计算控制代价
-    for(int i=0;i<this->arg.N;i++){
-        Control U = control_sequence[i];
-        Control U_ref = {arg.desire_speed,0};
+    // 控制相关代价
+    for (int i = 0; i < arg.N; ++i) {
+        const Control& U = control_sequence[i];
+        Control U_ref = {arg.desire_speed, 0};
         Control U_e = U - U_ref;
         double cost_ctrl = U_e.transpose() * arg.R * U_e;
-        //计算前轮转角约束代价
-        if(arg.if_cal_steer_cost){
-            c = U.transpose() * P2 - arg.steer_angle_max;
-            cost_max_steer = arg.steer_max_q1*exp(arg.steer_max_q2*c);
-            c = arg.steer_angle_min -  U.transpose() * P2 ;
-            cost_min_steer = arg.steer_min_q1*exp(arg.steer_min_q2*c);
+        double cost_steer = 0.0;
+        if (arg.if_cal_steer_cost) {
+            double c_max = U.transpose() * P2 - arg.steer_angle_max;
+            double c_min = arg.steer_angle_min - U.transpose() * P2;
+            double cost_max_steer = arg.steer_max_q1 * exp(arg.steer_max_q2 * c_max);
+            double cost_min_steer = arg.steer_min_q1 * exp(arg.steer_min_q2 * c_min);
             cost_steer = cost_max_steer + cost_min_steer;
-        }else{
-            cost_steer = 0;
         }
-        J_steer_total += cost_steer;
         J_ctrl_total += cost_ctrl;
+        J_steer_total += cost_steer;
     }
-    J_constraint_total = J_obs_total + J_steer_total + J_lane_total;
-    // std::cout<<"state cost:"<<J_state_total<<" ctrl cost:"<<J_ctrl_total<<" constraint cost:"<<J_constraint_total<<std::endl;
-    return  J_state_total + J_ctrl_total + J_constraint_total;
+
+    double J_constraint_total = J_obs_total + J_lane_total + J_steer_total;
+    // 调试输出各项代价构成
+    std::cout << "Cost breakdown:" << std::endl
+              << "  J_state_total = " << J_state_total << std::endl
+              << "  J_ctrl_total  = " << J_ctrl_total << std::endl
+              << "  J_obs_total   = " << J_obs_total << std::endl
+              << "  J_lane_total  = " << J_lane_total << std::endl
+              << "  J_steer_total = " << J_steer_total << std::endl
+              << "  J_total       = " << (J_state_total + J_ctrl_total + J_constraint_total) << std::endl;
+    return J_state_total + J_ctrl_total + J_constraint_total;
 }
 
-void CILQRSolver::compute_df(const Solution& solution){
-    for(int i=0;i<this->arg.N;i++){
-        State X = solution.ego_trj.get_states()[i];
-        Control U = solution.control_sequence.get_control_sequence()[i]; 
-        this->df_dx[i] = this->ego.get_model().get_jacobian_state(X,U);
-        this->df_du[i] = this->ego.get_model().get_jacobian_control(X,U);
+void CILQRSolver::compute_df(const Solution& solution) {
+    const auto& X_traj = solution.ego_trj.get_states();
+    const auto& U_seq = solution.control_sequence.get_control_sequence();
+    const int N = arg.N;
+
+    // 确保容器大小正确
+    if (static_cast<int>(df_dx.size()) != N) df_dx.assign(N, Matrix4d::Zero());
+    if (static_cast<int>(df_du.size()) != N) df_du.assign(N, Matrix<double,4,2>::Zero());
+
+    auto model = ego.get_model();
+    for (int i = 0; i < N; ++i) {
+        const Vector4d& X = X_traj[i];
+        const Vector2d& U = U_seq[i];
+        df_dx[i] = model.get_jacobian_state(X, U);
+        df_du[i] = model.get_jacobian_control(X, U);
     }
 }
-
 void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
     const auto& X_traj = solution.ego_trj.get_states();
     const auto& U = solution.control_sequence.get_control_sequence();
     const auto& local_plan = ego.get_local_plan().get_points();
-    const auto& obs_traj = obs.get_states();
     const int N = arg.N;
-    State X;
-    State X_r;
-    State X_e;
-    size_t index;
-    size_t match_index;
-    Vector4d l_dx = Vector4d::Zero();
-    Matrix4d l_ddx = Matrix4d::Zero();
-    Vector4d l_dx_ref = Vector4d::Zero();
-    Matrix4d l_ddx_ref = Matrix4d::Zero();
-    Vector2d dX = Vector2d::Zero();
-    // 初始化导数矩阵
-    Vector2d nor_r;
-    Vector2d P2(0, 1); // 转向控制投影向量
-    Vector4d db_obs = Vector4d::Zero();
-    Matrix4d ddb_obs = Matrix4d::Zero();
-    Vector2d lu_base  = Vector2d::Zero();
-    Matrix2d luu_base = Matrix2d::Zero();
 
-    // 转向约束导数
-    Vector2d db_steer = Vector2d::Zero();
-    Matrix2d ddb_steer = Matrix2d::Zero();
-    Vector2d u = Vector2d::Zero();
-    Vector2d u_r = Vector2d::Zero();
-    Vector2d u_e = Vector2d::Zero();
+    Vector2d P2(0, 1);
 
-    // 第一部分：状态相关导数
+    // 状态相关导数
     for (int i = 0; i <= N; ++i) {
-        X = X_traj[i];
-        
-        // 找到最近参考点
-        index = find_closest_point(local_plan, X) ;
-        match_index = index == ego.get_local_plan().get_points().size()-1?index:index+1;
-        // match_index = index;
+        const State& X = X_traj[i];
+        size_t index = find_closest_point(local_plan, X);
+        size_t match_index = index == ego.get_local_plan().get_points().size() - 1 ? index : index + 1;
         const Point& X_r_point = local_plan[match_index];
-        X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
+        State X_r; X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
+        State X_e = X - X_r;
 
-        // 状态误差
-        X_e = X - X_r;
-        // 基本状态代价导数
-        l_dx = 2 * arg.Q * X_e;
-        l_ddx = 2 * arg.Q;
+        Vector4d l_dx = 2 * arg.Q * X_e;
+        Matrix4d l_ddx = 2 * arg.Q;
 
-        //计算横向偏移代价导数
-        dX << X_e[0], X_e[1];
-        nor_r << -std::sin(X_r_point.heading), std::cos(X_r_point.heading);
-        l_dx_ref << -2*dX.dot(nor_r)*sin(X_r_point.heading),
-                     2*dX.dot(nor_r)*cos(X_r_point.heading),
-                     0, 
-                     0;
-        l_ddx_ref << 2*pow(sin(X_r_point.heading),2),       -sin(2*X_r_point.heading), 0, 0,
-                           -sin(2*X_r_point.heading), 2*pow(cos(X_r_point.heading),2), 0, 0,
-                                                   0,                               0, 0, 0,
-                                                   0,                               0, 0, 0;
-        l_dx_ref = l_dx_ref * arg.ref_weight;
-        l_ddx_ref = l_ddx_ref * arg.ref_weight;
+        Vector2d dX(X_e[0], X_e[1]);
+        Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+        Vector4d l_dx_ref(-2*dX.dot(nor_r)*std::sin(X_r_point.heading),
+                           2*dX.dot(nor_r)*std::cos(X_r_point.heading), 0, 0);
+        Matrix4d l_ddx_ref;
+        l_ddx_ref << 2*pow(sin(X_r_point.heading),2), -sin(2*X_r_point.heading), 0, 0,
+                    -sin(2*X_r_point.heading), 2*pow(cos(X_r_point.heading),2), 0, 0,
+                    0, 0, 0, 0,
+                    0, 0, 0, 0;
+        l_dx_ref *= arg.ref_weight;
+        l_ddx_ref *= arg.ref_weight;
 
-        if (arg.if_cal_obs_cost && i < obs_traj.size()) {
-            const State& obs_state = obs_traj[i];
-            double dx = X[0] - obs_state[0];
-            double dy = X[1] - obs_state[1];
-            double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-            double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-        
-            // 坐标变换到障碍物局部系
-            Vector2d dX_obs(dx, dy);
-            Matrix2d rotation_matrix;
-            rotation_matrix << cos(obs_state[2]),  sin(obs_state[2]), 
-                              -sin(obs_state[2]),  cos(obs_state[2]);
-            Vector2d dX_obs_cord = rotation_matrix * dX_obs;
-        
-            // 计算约束函数 c
-            double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-        
-            // 计算局部坐标系梯度
-            Vector2d grad_local(-2 * dX_obs_cord[0] / (a * a), 
-                               -2 * dX_obs_cord[1] / (b * b));
-        
-            // 转换到全局坐标系梯度
-            Matrix2d rotation_matrix_transpose = rotation_matrix.transpose();
-            Vector2d grad_global = rotation_matrix_transpose * grad_local;
-        
-            // 构建状态梯度向量
-            Vector4d c_dot;
-            c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
-        
-            // 后续处理（指数权重、截断等）
-            double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
-            db_obs = exp_term * c_dot;
-            ddb_obs = exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
+        // 每步重置障碍物导数
+        Vector4d db_obs = Vector4d::Zero();
+        Matrix4d ddb_obs = Matrix4d::Zero();
+
+        if (arg.if_cal_obs_cost) {
+            for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
+                const Trajectory& obs = obs_list[obs_idx];
+                if (i >= obs.get_states().size()) continue;
+                const State& obs_state = obs.get_states()[i];
+                double dx = X[0] - obs_state[0];
+                double dy = X[1] - obs_state[1];
+                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
+                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
+                Vector2d dX_obs(dx, dy);
+                Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
+                Vector2d dX_obs_cord = R * dX_obs;
+                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                Vector2d grad_local(-2 * dX_obs_cord[0] / (a*a), -2 * dX_obs_cord[1] / (b*b));
+                Vector2d grad_global = R.transpose() * grad_local;
+                Vector4d c_dot; c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
+                double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
+                db_obs += exp_term * c_dot;
+                ddb_obs += exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
+            }
         }
-            // double dist = std::hypot(dx, dy);
-            // double safe_dist = arg.obs_rad + ego.get_model().ego_rad;
-            
-            // if (dist < 1e-3) dist = 1e-3; // 避免除以零 
-            // Vector4d c_dot;
-            // c_dot << -dx/dist, -dy/dist, 0, 0;
-            
-            // double c = safe_dist - dist;
-            // double exp_term = arg.obs_q1 * arg.obs_q2 * std::exp(arg.obs_q2 * c);
-            // db_obs = exp_term * c_dot;
-            // Matrix4d ddc;
-            // ddc << -1/dist,       0, 0, 0,
-            //              0, -1/dist, 0, 0,
-            //              0,       0, 0, 0,
-            //              0,       0, 0, 0;
-            // ddb_obs = exp_term * (arg.obs_q2 * c_dot * c_dot.transpose() + ddc);
-            // ddb_obs =  exp_term * arg.obs_q2 * c_dot * c_dot.transpose();
 
-        // 车道保持代价导数
+        // 车道保持代价导数（左右边界）
         Vector4d db_lane_total = Vector4d::Zero();
         Matrix4d ddb_lane_total = Matrix4d::Zero();
         if (arg.if_cal_lane_cost) {
-
-            // 左侧约束
             double l = dX.dot(nor_r);
             double c_left = l - arg.trace_safe_width_left;
-            Vector4d dc_left;
-            dc_left << -std::sin(X_r_point.heading), std::cos(X_r_point.heading), 0, 0;
-            
-            auto [b_left, db_left, ddb_left] = barrierFunction(
-                arg.lane_q1, arg.lane_q2, c_left, dc_left);
+            Vector4d dc_left; dc_left << -std::sin(X_r_point.heading), std::cos(X_r_point.heading), 0, 0;
+            auto [b_left, db_left, ddb_left] = barrierFunction(arg.lane_q1, arg.lane_q2, c_left, dc_left);
 
-            // 右侧约束
             double c_right = -l - arg.trace_safe_width_right;
             Vector4d dc_right = -dc_left;
-            
-            auto [b_right, db_right, ddb_right] = barrierFunction(
-                arg.lane_q1, arg.lane_q2, c_right, dc_right);
+            auto [b_right, db_right, ddb_right] = barrierFunction(arg.lane_q1, arg.lane_q2, c_right, dc_right);
 
             db_lane_total = db_left + db_right;
             ddb_lane_total = ddb_left + ddb_right;
@@ -591,35 +516,36 @@ void CILQRSolver::compute_cost_derivatives(const Solution& solution) {
 
         this->lx[i] = l_dx + l_dx_ref + db_obs + db_lane_total;
         this->lxx[i] = l_ddx + l_ddx_ref + ddb_obs + ddb_lane_total;
+        // 注意：终端时刻 i==N 没有控制量，避免对 lux[N] 赋值越界
+
     }
 
-    // 第二部分：控制相关导数
+    // 控制相关导数
     for (int i = 0; i < N; ++i) {
-        u = U[i];
-        u_r = {arg.desire_speed,0};
-        u_e = u - u_r;
-        // 基本控制代价导数
-        lu_base = 2 * arg.R * u_e;
-        luu_base = 2 * arg.R;
+        const Vector2d u = U[i];
+        const Vector2d u_r(arg.desire_speed, 0);
+        const Vector2d u_e = u - u_r;
+
+        Vector2d lu_base = 2 * arg.R * u_e;
+        Matrix2d luu_base = 2 * arg.R;
+
+        // 每步重置转向约束导数
+        Vector2d db_steer = Vector2d::Zero();
+        Matrix2d ddb_steer = Matrix2d::Zero();
 
         if (arg.if_cal_steer_cost) {
-            // 最大转向约束
             double c_max = u.dot(P2) - arg.steer_angle_max;
-            auto [b_max, db_max, ddb_max] = barrierFunction(
-                arg.steer_max_q1, arg.steer_max_q2, c_max, P2);
-            
-            // 最小转向约束
+            auto [b_max, db_max, ddb_max] = barrierFunction(arg.steer_max_q1, arg.steer_max_q2, c_max, P2);
             double c_min = arg.steer_angle_min - u.dot(P2);
-            auto [b_min, db_min, ddb_min] = barrierFunction(
-                arg.steer_min_q1, arg.steer_min_q2, c_min, -P2);
-            
+            auto [b_min, db_min, ddb_min] = barrierFunction(arg.steer_min_q1, arg.steer_min_q2, c_min, -P2);
             db_steer = db_max + db_min;
             ddb_steer = ddb_max + ddb_min;
         }
 
-        // 合并控制导数
         this->lu[i] = lu_base + db_steer;
         this->luu[i] = luu_base + ddb_steer;
+        // 控制-状态交叉项（当前实现为零）
+        this->lux[i] = Matrix<double,2,4>::Zero();
     }
 }
 

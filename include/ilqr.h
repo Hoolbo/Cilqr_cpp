@@ -1,4 +1,4 @@
-﻿#ifndef ILQR_H
+#ifndef ILQR_H
     #define ILQR_H 
     #include <Eigen/Eigen>
     #include <algorithm>
@@ -12,7 +12,7 @@
         double tf = 1000;
         double dt = 0.1;
         //CILQR参数
-        int N = 50; //Horizen
+        int N = 30; //Horizen
         double tol = 1;
         double rel_tol = 1e-5;
         int max_iter = 50;
@@ -28,7 +28,7 @@
         //代价参数
         double desire_speed = 5;
         double desire_heading = 0;
-        bool if_cal_obs_cost = true;
+        bool if_cal_obs_cost = false;
         bool if_cal_lane_cost = false;
         bool if_cal_steer_cost = false;
         //最大转向约束
@@ -52,22 +52,22 @@
         double obs_length = 5;
         double obs_width = 3;
         double safe_a_buffer = 5;
-        double safe_b_buffer = 4;
+        double safe_b_buffer = 5;
         // double buff = 0;
         // double obs_rad = 1 + buff;
         //QR矩阵
         Matrix4d Q;
         Matrix2d R;
         //横向偏移代价
-        double ref_weight = 2;
+        double ref_weight = 10;
         Arg() { // 在构造函数中初始化矩阵
             Q << 0, 0, 0, 0, 
-                0, 0, 0, 0,
-                0, 0, 1, 0,
-                0, 0, 0, 1;
+                 0, 0, 0, 0,
+                 0, 0, 1, 0,
+                 0, 0, 0, 1;
 
-            R <<     2,     0,
-                          0,    1;
+            R <<    1,    0,
+                    0,    1;
         }
     };
     //路点结构体
@@ -181,7 +181,7 @@
             };
             //设置or获取局部路径
             void set_local_plan(){
-                size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),0.0) + 20);
+                size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),0.0) + 200);
                 this->local_plan.set_plan(this->global_plan,this->state,num_points_to_extract);
             };
             LocalPlan get_local_plan(){
@@ -276,7 +276,7 @@
             bool converged = false;
             Solution pre_solution;
             Vehicle ego;
-            Trajectory obs;
+            std::vector<Trajectory> obs_list;
             Arg arg;
             
             std::vector<MatrixXd> k;
@@ -300,23 +300,40 @@
 
         public:
             //构造函数
-            CILQRSolver(const Vehicle& ego, const Trajectory& obs, const Arg& arg) 
-            : ego(ego), obs(obs), arg(arg), 
-            k(arg.N, Vector2d::Zero()),
-            K(arg.N,MatrixXd::Zero(2,4)),
-            df_dx(arg.N,MatrixXd::Zero(4,4)),
-            df_du(arg.N,MatrixXd::Zero(4,2)),
-            lx(arg.N+1, Vector4d::Zero()),
-            lu(arg.N, Vector2d::Zero()),
-            lxx(arg.N+1, Matrix4d::Zero()),
-            luu(arg.N, Matrix2d::Zero()),
-            lux(arg.N, MatrixXd::Zero(2,4)),
-            Qu(arg.N, Vector2d::Zero()),
-            Quu(arg.N, MatrixXd::Zero(2,2)){}
+            CILQRSolver(const Vehicle& ego, const std::vector<Trajectory>& obs_list, const Arg& arg) 
+            : ego(ego), obs_list(obs_list), arg(arg), lamb(arg.lamb_init),
+            k(arg.N),
+            K(arg.N),
+            df_dx(arg.N),
+            df_du(arg.N),
+            lx(arg.N+1),
+            lu(arg.N),
+            lxx(arg.N+1),
+            luu(arg.N),
+            lux(arg.N),
+            Qu(arg.N),
+            Quu(arg.N){
+                // 初始化矩阵向量
+                for(int i = 0; i < arg.N; ++i) {
+                    k[i] = MatrixXd::Zero(2,1);
+                    K[i] = MatrixXd::Zero(2,4);
+                    df_dx[i] = MatrixXd::Zero(4,4);
+                    df_du[i] = MatrixXd::Zero(4,2);
+                    lu[i] = MatrixXd::Zero(2,1);
+                    luu[i] = MatrixXd::Zero(2,2);
+                    lux[i] = MatrixXd::Zero(2,4);
+                    Qu[i] = MatrixXd::Zero(2,1);
+                    Quu[i] = MatrixXd::Zero(2,2);
+                }
+                for(int i = 0; i < arg.N+1; ++i) {
+                    lx[i] = MatrixXd::Zero(4,1);
+                    lxx[i] = MatrixXd::Zero(4,4);
+                }
+            }
             
             //接口
 
-            Solution solve(const State& init_state,const Trajectory& obs);
+            Solution solve(const State& init_state,const std::vector<Trajectory>& obs_list);
 
     };
 #endif
