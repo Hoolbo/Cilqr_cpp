@@ -21,7 +21,7 @@
             "label": "CMake Build",
             "type": "shell",
             "command": "cmake",
-            "args": ["--build", "build/cilqr_demo"],
+            "args": ["--build", "build"],
             "group": {
                 "kind": "build",
                 "isDefault": true

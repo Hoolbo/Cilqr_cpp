@@ -48,12 +48,10 @@ set(MAIN_SOURCES
     src/main.cpp
     src/ilqr.cpp
     src/utils.cpp
-    # src/map_data.cpp  # 暂时排除，因为依赖OpenCV
+    src/hybrid_astar.cpp
 )
 add_executable(main ${MAIN_SOURCES})
 
-# 坐标转换测试程序暂时禁用
-# add_executable(test_coordinate_conversion src/test_coordinate_conversion.cpp)
 
 # 链接库
 target_link_libraries(main PRIVATE matplotlib_cpp)

@@ -2,46 +2,47 @@
 #include "ilqr.h"
 #include "utils.h"
 #include <ctime>
-
 #ifdef _WIN32
 #include <windows.h>
 #endif
-
 int main(int argc, char** argv){
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif
-    std::cout << "=== CILQR Program Starting ===" << std::endl;
-    std::cout << "Initializing variables..." << std::endl;
-    
-    // Initialize variables
     std::vector<Point> way_points;
     std::vector<std::vector<double>> global_plan_log(3), ego_log(4);
-    
-    std::cout << "Variables initialized successfully." << std::endl;
-
-    // 起点/终点变量（支持从命令行参数获取：start_x start_y start_theta goal_x goal_y goal_theta）
-    double start_x = 117, start_y = 70.0, start_theta = -1;
-    double goal_x = 60, goal_y = 50.0, goal_theta = 2.8;
-    if (argc >= 7) {
-        try {
-            start_x = std::stod(argv[1]);
-            start_y = std::stod(argv[2]);
-            start_theta = std::stod(argv[3]);
-            goal_x = std::stod(argv[4]);
-            goal_y = std::stod(argv[5]);
-            goal_theta = std::stod(argv[6]);
-        } catch (...) {
-            std::cerr << "Invalid start/goal input; using defaults." << std::endl;
-        }
-    }
-    std::cout << "Start: (" << start_x << ", " << start_y << ", " << start_theta << ") | "
-              << "Goal: (" << goal_x << ", " << goal_y << ", " << goal_theta << ")" << std::endl;
-    
     // 地图选择 - 修改这里来切换不同的地图
     // B201 -- B210
     // B301 -- B310
-    std::string selected_map = "B309";  // 修改这里来选择不同的地图
+    std::string selected_map = "B207";  // 修改这里来选择不同的地图
+    double start_x = 70, start_y = 10, start_theta = 1.5;
+    double goal_x = 40, goal_y = 100, goal_theta = 1.57;
+    int main_iter = 200;
+        //障碍物初始化 - 支持多障碍物
+    std::vector<State> obs_initial_states = {
+
+        State(50, 20, 1.57, 2),
+        State(20, 100, 0, 1),
+        State(80, 40, 1.8, 4)
+        // 可以添加更多障碍物，例如:
+        // State(47, 35, 2.35, 1.2)  // 障碍物2
+    };
+    // if (argc >= 7) {
+    //     try {
+    //         start_x = std::stod(argv[1]);
+    //         start_y = std::stod(argv[2]);
+    //         start_theta = std::stod(argv[3]);
+    //         goal_x = std::stod(argv[4]);
+    //         goal_y = std::stod(argv[5]);
+    //         goal_theta = std::stod(argv[6]);
+    //     } catch (...) {
+    //         std::cerr << "Invalid start/goal input; using defaults." << std::endl;
+    //     }
+    // }
+    std::cout << "Start: (" << start_x << ", " << start_y << ", " << start_theta << ") | "
+              << "Goal: (" << goal_x << ", " << goal_y << ", " << goal_theta << ")" << std::endl;
+    
+
     std::string map_file = resolve_resource_path("Maps/bitmap/" + selected_map + "_global_map.json");
     std::cout << "Loading map file: " << map_file << " (Selected: " << selected_map << ")" << std::endl;
     
@@ -120,7 +121,7 @@ int main(int argc, char** argv){
     // 结合铰接车模型推导保守曲率/半径限值，并映射到转向速率代价限位（占位映射）
     SystemModel tmp_model; // 用于尺寸参数
     ArticulatedLimits lims = compute_articulated_limits(tmp_model, 0.35); // 保守机械上限 0.35rad
-    arg.if_cal_steer_cost = true;
+    arg.if_cal_steer_cost = false;
     // 将曲率限值粗略映射到转向速率上下限：omega ≈ v * kappa_max，取期望速度的 0.5 倍作为保守因子
     double omega_bound = std::max(0.1, 0.5 * arg.desire_speed * lims.kappa_max);
     omega_bound = std::min(omega_bound, 0.4); // 上限再加一道保守夹紧
@@ -136,13 +137,7 @@ int main(int argc, char** argv){
         ego_log[i].push_back(ego.get_state()[i]);
     }
     
-    //障碍物初始化 - 支持多障碍物
-    std::vector<State> obs_initial_states = {
 
-        State(54, 43, 2.35, 1.5), 
-        // 可以添加更多障碍物，例如:
-        State(47, 35, 2.35, 0.5)  // 障碍物2
-    };
     
     std::vector<Trajectory> obs_trajectories;
     std::vector<State> current_obs_states;
@@ -150,15 +145,6 @@ int main(int argc, char** argv){
     // 为每个障碍物预测轨迹
     for(const auto& obs_state : obs_initial_states) {
         Trajectory obs_trj = predict_obstacle_trajectory(obs_state, arg.dt, arg.N);
-        // 快速验证：打印前5步预测
-        std::cout << "Predicted obstacle (init) first 5 states:" << std::endl;
-        for (int k = 0; k < std::min(5, (int)obs_trj.states.size()); ++k) {
-            std::cout << "  k=" << k
-                      << " x=" << obs_trj.states[k][0]
-                      << " y=" << obs_trj.states[k][1]
-                      << " theta=" << obs_trj.states[k][2]
-                      << " v=" << obs_trj.states[k][3] << std::endl;
-        }
         obs_trajectories.push_back(obs_trj);
         current_obs_states.push_back(obs_state);
     }
@@ -172,15 +158,8 @@ int main(int argc, char** argv){
 
     //主循环
     // for(int i = 0;i<arg.tf/arg.dt;i++){
-    for(int i = 0;i<50;i++){
+    for(int i = 0;i<main_iter;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
-        
-        // 显示当前所有障碍物状态
-        for(size_t obs_idx = 0; obs_idx < current_obs_states.size(); obs_idx++) {
-            const State& current_obs_state = current_obs_states[obs_idx];
-            std::cout << "Obstacle " << obs_idx + 1 << " current state: x=" << current_obs_state[0] << ", y=" << current_obs_state[1] << ", theta=" << current_obs_state[2] << ", v=" << current_obs_state[3] << std::endl;
-            std::cout << "Obstacle " << obs_idx + 1 << " predicted trajectory size: " << obs_trajectories[obs_idx].states.size() << std::endl;
-        }
         
         // 问题求解
         clock_t start = clock();
@@ -205,21 +184,10 @@ int main(int argc, char** argv){
             double obs_theta = current_obs_state[2];  // 朝向保持不变
             double obs_v = current_obs_state[3];      // 速度保持不变
             current_obs_state = State(obs_x, obs_y, obs_theta, obs_v);
-            std::cout << "Obstacle " << obs_idx + 1 << " updated state: x=" << obs_x << ", y=" << obs_y << ", theta=" << obs_theta << ", v=" << obs_v << std::endl;
+            // std::cout << "Obstacle " << obs_idx + 1 << " updated state: x=" << obs_x << ", y=" << obs_y << ", theta=" << obs_theta << ", v=" << obs_v << std::endl;
             
             // 重新预测该障碍物的轨迹
             obs_trajectories[obs_idx] = predict_obstacle_trajectory(current_obs_state, arg.dt, arg.N);
-            // 快速验证：每帧打印第一个障碍物前3步预测
-            if (obs_idx == 0) {
-                std::cout << "Predicted obstacle (frame) first 3 states:" << std::endl;
-                for (int k = 0; k < std::min(3, (int)obs_trajectories[obs_idx].states.size()); ++k) {
-                    std::cout << "  k=" << k
-                              << " x=" << obs_trajectories[obs_idx].states[k][0]
-                              << " y=" << obs_trajectories[obs_idx].states[k][1]
-                              << " theta=" << obs_trajectories[obs_idx].states[k][2]
-                              << " v=" << obs_trajectories[obs_idx].states[k][3] << std::endl;
-                }
-            }
         }
 
         std::cout<<"Vehicle state:"<<std::endl;
@@ -227,11 +195,11 @@ int main(int argc, char** argv){
         std::cout<<"y   :   "<<cur_state[1]<<std::endl;
         std::cout<<"theta   :   "<<cur_state[2]<<std::endl;
         std::cout<<"gamma   :   "<<cur_state[3]<<std::endl;
-         std::cout<<"Control:"<<std::endl;
-         std::cout<<"v  :   "<< cur_ctrl[0]<<std::endl;
-         std::cout<<"omega  :   "<< cur_ctrl[1]<<std::endl;
+        std::cout<<"Control:"<<std::endl;
+        std::cout<<"v  :   "<< cur_ctrl[0]<<std::endl;
+        std::cout<<"omega  :   "<< cur_ctrl[1]<<std::endl;
         // if(i%3==0){
-            dynamic_plot(global_plan_log,ego_log,obs_trajectories,solution,&bitmap_map,global_plan,ego.get_model(),arg);
+        dynamic_plot(global_plan_log,ego_log,obs_trajectories,solution,&bitmap_map,global_plan,ego.get_model(),arg);
         // }
  
     }

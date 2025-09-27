@@ -23,6 +23,8 @@
 #include <unordered_map>
 #include <limits>
 
+#include "hybrid_astar.h"
+
 // ---- Grid A* fallback helpers to avoid obstacle penetration ----
 struct AStarNode {
     int x; int y; double g; double f; int px; int py;
@@ -1277,24 +1279,43 @@ bool plan_global_path(const MapData& bitmap_map,
                       bool enable_rrt) {
     std::vector<Point> points;
     if (enable_rrt) {
-        RRTStarParams params;
-        // 更激进且更长时间的搜索设置
-        params.max_iters = 200000;
-        params.step_size = 0.4;
-        params.goal_sample_rate = 0.15;
-        params.rewire_radius_factor = 2.0;
-        params.goal_tolerance = 1.2;
-        params.inflation_radius = 1.5;
-        params.corridor_sample_rate = 0.7;
-        params.connect_attempt_interval = 100;
-        params.max_connect_steps = 300;
-        std::cout << "Attempting RRT* planning (enhanced)..." << std::endl;
-        if (rrt_star_plan(bitmap_map, start, goal, points, params)) {
-            std::cout << "RRT* planning succeeded! Path points: " << points.size() << std::endl;
+        // 使用混合A*替代RRT*作为全局规划器
+        HybridAStarParams hparams;
+        hparams.grid_resolution = std::max(0.05, bitmap_map.resolution);
+        hparams.inflation_radius = 2.0;
+        hparams.turning_radius = 5.0;
+        hparams.move_step = 0.5; // was 0.4, speed up progress per expansion
+        hparams.move_step_backwards = 0.4; // was 0.3, keep ratio similar
+        hparams.num_steering_angles = 7; // was 5, finer angular options
+        hparams.heading_resolution = 5.0; // was default 10 deg, finer heading bins
+        hparams.allow_reverse = false; // enable reverse to escape local traps
+        hparams.heuristic_weight = 3.0; // make search more goal-directed
+        hparams.max_iterations = 200000; // was 20000, allow more iterations if needed
+        hparams.num_nodes_to_keep = 60000; // was 30000, reduce pruning pressure
+        hparams.goal_tolerance_xy = 0.8;
+        hparams.goal_tolerance_heading = 15.0;
+        // 清距偏好（让路径更远离障碍物）
+        hparams.clearance_weight = 12;     // 清距代价权重（越大越偏好远离障碍）
+        hparams.desired_clearance = 3;    // 期望与障碍的最小距离（米），小于该值增加代价
+        hparams.max_clearance = 12.0;       // 清距归一化的上限（米），避免过大距离影响代价
+        hparams.min_rs_clearance = 3;     // RS解析路径的最小允许清距（米），低于则拒绝解析连接
+        std::cout << "Attempting Hybrid A* planning..." << std::endl;
+        if (hybrid_astar_plan(bitmap_map, start, goal, points, hparams)) {
+            std::cout << "Hybrid A* planning succeeded! Raw path points: " << points.size() << std::endl;
+            std::cout << "[RAW PATH] 直接使用混合A*原始路径，跳过所有平滑处理" << std::endl;
+            
+            // 直接使用混合A*的原始路径，不进行任何平滑处理
+            // 混合A*已经考虑了车辆运动学约束，路径应该是可行的
+            
+            // 确保目标点被正确添加（避免重复添加）
+            if (points.empty() || std::hypot(points.back().x - goal[0], points.back().y - goal[1]) > 1e-3) {
+                points.emplace_back(goal[0], goal[1], goal[2]);
+            }
+            
             out_plan.set_plan(points);
             return true;
         } else {
-            std::cout << "RRT* planning failed, falling back to direct line check..." << std::endl;
+            std::cout << "Hybrid A* planning failed, falling back to direct line check..." << std::endl;
         }
     }
     // 简化版直线可行性检查
@@ -1382,28 +1403,22 @@ OccupancyGrid make_occupancy_grid(const MapData& map, double elevation_threshold
     grid.origin_y = map.origin.size() > 1 ? map.origin[1] : 0.0;
     grid.cells.resize(grid.width * grid.height, 0);
     
-    // 简化逻辑：-1表示不可通行（障碍物），所有正数都表示可通行
-    std::cout << "Occupancy grid generation: max_elevation = " << map.max_elevation << std::endl;
-    
-    int obstacle_count = 0;  // -1值的数量
-    int free_count = 0;      // 正数值的数量
-    
+    // 使用严格的占用分类：-1 视为障碍，正数视为可通行（与地图定义一致）
+    int obstacle_count = 0;  // 障碍单元数量
+    int free_count = 0;      // 可通行单元数量
     for (int y = 0; y < grid.height; ++y) {
         for (int x = 0; x < grid.width; ++x) {
             double v = map.data[y][x];
             size_t idx = static_cast<size_t>(y) * grid.width + static_cast<size_t>(x);
             if (v < 0) {
-                // -1表示不可通行（障碍物）
-                grid.cells[idx] = 1;
+                grid.cells[idx] = 1;  // 障碍
                 obstacle_count++;
             } else {
-                // 所有正数都表示可通行
-                grid.cells[idx] = 0;
+                grid.cells[idx] = 0;  // 可通行
                 free_count++;
             }
         }
     }
-    
     std::cout << "Grid statistics: obstacles=" << obstacle_count 
               << ", free=" << free_count << std::endl;
     // 简单膨胀：基于曼哈顿邻域的半径近似

@@ -28,7 +28,7 @@
         //代价参数
         double desire_speed = 5;
         double desire_heading = 0;
-        bool if_cal_obs_cost = false;
+        bool if_cal_obs_cost = true;
         bool if_cal_lane_cost = false;
         bool if_cal_steer_cost = false;
         //最大转向约束
@@ -51,22 +51,22 @@
         // double obs_width = 2;
         double obs_length = 5;
         double obs_width = 3;
-        double safe_a_buffer = 5;
-        double safe_b_buffer = 5;
+        double safe_a_buffer = 0.5;
+        double safe_b_buffer = 0.5;
         // double buff = 0;
         // double obs_rad = 1 + buff;
         //QR矩阵
         Matrix4d Q;
         Matrix2d R;
         //横向偏移代价
-        double ref_weight = 10;
+        double ref_weight = 2;
         Arg() { // 在构造函数中初始化矩阵
             Q << 0, 0, 0, 0, 
                  0, 0, 0, 0,
                  0, 0, 1, 0,
                  0, 0, 0, 1;
 
-            R <<    1,    0,
+            R <<    3,    0,
                     0,    1;
         }
     };
@@ -181,7 +181,7 @@
             };
             //设置or获取局部路径
             void set_local_plan(){
-                size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),0.0) + 200);
+                size_t num_points_to_extract = static_cast<size_t>(std::max<double>((state[3] * model.dt * model.N),100) + 200);
                 this->local_plan.set_plan(this->global_plan,this->state,num_points_to_extract);
             };
             LocalPlan get_local_plan(){

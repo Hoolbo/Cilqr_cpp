@@ -87,6 +87,7 @@
         "core": "cpp",
         "filesystem": "cpp",
         "forward_list": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "unordered_set": "cpp"
     }
 }

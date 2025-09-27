@@ -3,6 +3,7 @@
 #include <iostream>
 #include "ilqr.h"
 using namespace Eigen;
+#include <algorithm>
 //计算两点之间的距离
 double distance(const Point& p1, const Point& p2) {
     return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
@@ -38,6 +39,7 @@ void LocalPlan::set_plan(const GlobalPlan& global_plan,const State& vehicle_stat
     while(this->points.size() < num_points_to_extract){
          this->points.push_back(this->points.back());
     }
+    std::cout << "LocalPlan points.size():" << this->points.size() << std::endl;
 }
 
 BarrieInfo barrierFunction(double q1,double q2,double c,VectorXd dc){
@@ -125,14 +127,33 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
     ego.set_local_plan();
 
     //如果接近终点就把期望速度置0
-    Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/3];
-    Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
-    if(local_middle_point == global_last_point){
-        arg.desire_speed = 0;
-        arg.desire_heading = 0;
-        // arg.Q(3,3) = 0;
+    // Point local_middle_point = this->ego.get_local_plan().get_points()[ego.get_local_plan().get_points().size()/3];
+    // Point global_last_point = this->ego.get_global_plan().get_points()[ego.get_global_plan().get_points().size()-1];
+    // 使用距离阈值判断接近终点，避免直接把期望速度置为0
+    // double dist_to_goal = distance(local_middle_point, global_last_point);
+    // if(dist_to_goal < 5) {
+    //     // 平滑降低期望速度而不是直接置0（示例：减半）
+    //     arg.desire_speed = std::max(0.0, arg.desire_speed * dist_to_goal / 5);
+    //     arg.desire_heading = 0;
+    // }
+    // 改为使用车辆当前位置与全局路径终点的距离判断，避免局部中点导致过早降速
+    {
+        const auto& global_points = this->ego.get_global_plan().get_points();
+        if (!global_points.empty()) {
+            const Point& goal_pt = global_points.back();
+            const Vector4d cur_state = this->ego.get_state();
+            double dx = cur_state[0] - goal_pt.x;
+            double dy = cur_state[1] - goal_pt.y;
+            double dist_to_goal = std::sqrt(dx*dx + dy*dy);
+            if (dist_to_goal < 10.0) {
+                // 使用更平滑的线性衰减，并设置一个最小速度，避免速度被压到接近0
+                double min_speed = 1.0;
+                arg.desire_speed = std::max(min_speed, arg.desire_speed * dist_to_goal / 10.0);
+            }
+            // 终点附近保持期望航向为 0（如不需要可后续移除）
+            arg.desire_heading = 0;
+        }
     }
-
     Solution nominal_solution = get_nominal_solution(init_state);
     Solution current_solution = nominal_solution;
     Solution new_solution;
@@ -147,7 +168,7 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
     
     for (int iter = 0; iter < arg.max_iter; ++iter) {
         iterations_count = iter + 1;
-        std::cout << "Iteration: " << iter + 1 << ", Cost: " << J_old << ", Lambda: " << lamb << std::endl;
+        // std::cout << "Iteration: " << iter + 1 << ", Cost: " << J_old << ", Lambda: " << lamb << std::endl;
         
         // // 备份当前解
         // Solution old_solution = current_solution;
@@ -252,12 +273,12 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
     current_solution.solve_time_ms = solve_time * 1000;
     
     // 输出收敛信息
-    std::cout << "CILQR Solver Summary:" << std::endl;
-    std::cout << "  Converged: " << (converged ? "Yes" : "No") << std::endl;
-    std::cout << "  Iterations: " << iterations_count << "/" << arg.max_iter << std::endl;
-    std::cout << "  Final Cost: " << J_old << std::endl;
-    std::cout << "  Final Lambda: " << lamb << std::endl;
-    std::cout << "  Solve Time: " << solve_time * 1000 << " ms" << std::endl;
+    // std::cout << "CILQR Solver Summary:" << std::endl;
+    // std::cout << "  Converged: " << (converged ? "Yes" : "No") << std::endl;
+    // std::cout << "  Iterations: " << iterations_count << "/" << arg.max_iter << std::endl;
+    // std::cout << "  Final Cost: " << J_old << std::endl;
+    // std::cout << "  Final Lambda: " << lamb << std::endl;
+    // std::cout << "  Solve Time: " << solve_time * 1000 << " ms" << std::endl;
     
     // pre_solution = current_solution;
     return current_solution;
@@ -307,7 +328,7 @@ Solution CILQRSolver::get_nominal_solution(const State& init_state){
             //     -arg.steer_angle_max, 
             //     arg.steer_angle_max);
             // 前向模拟
-            U << 10,0;
+            U << arg.desire_speed,0;
             State X_next = ego.get_model().dynamics(X_cur, U);
             nominal_ctrl_sequence.push_back(U);
             nominal_trj.push_back(X_next);
@@ -396,6 +417,7 @@ double CILQRSolver::cal_cost(const Solution& solution){
     for (int i = 0; i < arg.N; ++i) {
         const Control& U = control_sequence[i];
         Control U_ref = {arg.desire_speed, 0};
+        // std::cout << "arg.desire_speed:" << arg.desire_speed << std::endl;
         Control U_e = U - U_ref;
         double cost_ctrl = U_e.transpose() * arg.R * U_e;
         double cost_steer = 0.0;
@@ -406,19 +428,20 @@ double CILQRSolver::cal_cost(const Solution& solution){
             double cost_min_steer = arg.steer_min_q1 * exp(arg.steer_min_q2 * c_min);
             cost_steer = cost_max_steer + cost_min_steer;
         }
+
         J_ctrl_total += cost_ctrl;
         J_steer_total += cost_steer;
     }
 
     double J_constraint_total = J_obs_total + J_lane_total + J_steer_total;
     // 调试输出各项代价构成
-    std::cout << "Cost breakdown:" << std::endl
-              << "  J_state_total = " << J_state_total << std::endl
-              << "  J_ctrl_total  = " << J_ctrl_total << std::endl
-              << "  J_obs_total   = " << J_obs_total << std::endl
-              << "  J_lane_total  = " << J_lane_total << std::endl
-              << "  J_steer_total = " << J_steer_total << std::endl
-              << "  J_total       = " << (J_state_total + J_ctrl_total + J_constraint_total) << std::endl;
+    // std::cout << "Cost breakdown:" << std::endl
+    //           << "  J_state_total = " << J_state_total << std::endl
+    //           << "  J_ctrl_total  = " << J_ctrl_total << std::endl
+    //           << "  J_obs_total   = " << J_obs_total << std::endl
+    //           << "  J_lane_total  = " << J_lane_total << std::endl
+    //           << "  J_steer_total = " << J_steer_total << std::endl
+    //           << "  J_total       = " << (J_state_total + J_ctrl_total + J_constraint_total) << std::endl;
     return J_state_total + J_ctrl_total + J_constraint_total;
 }
 

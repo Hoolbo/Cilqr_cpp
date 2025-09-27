@@ -1,3 +1,4 @@
+#pragma once
 // #include <mat.h>
 #include <vector>
 #include <cstdint>
