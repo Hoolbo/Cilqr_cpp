@@ -37,6 +37,26 @@ struct HybridAStarParams {
     double min_rs_clearance = 3;     // RS解析路径的最小允许清距（米），低于则拒绝解析连接
 };
 
+// Dijkstra预计算距离图
+struct DijkstraDistanceMap {
+    std::vector<std::vector<double>> distances; // 距离图：distances[y][x]
+    int width;                                   // 栅格宽度
+    int height;                                  // 栅格高度
+    double resolution;                           // 栅格分辨率
+    double origin_x;                            // 栅格原点x坐标
+    double origin_y;                            // 栅格原点y坐标
+    bool is_valid;                              // 是否有效
+    
+    DijkstraDistanceMap() : width(0), height(0), resolution(0.1), origin_x(0), origin_y(0), is_valid(false) {}
+    
+    // 获取世界坐标对应的距离
+    double getDistance(double world_x, double world_y) const;
+};
+
+// Dijkstra预计算函数：从目标点计算到所有栅格点的最短距离
+DijkstraDistanceMap computeDijkstraDistances(const OccupancyGrid& grid, 
+                                           double goal_x, double goal_y);
+
 // 混合A*规划接口：输出包含 heading 的点集
 bool hybrid_astar_plan(const MapData& map,
                        const Eigen::Vector3d& start,

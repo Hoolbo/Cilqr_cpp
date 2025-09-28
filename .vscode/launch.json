@@ -1,12 +1,11 @@
 {
     "version": "0.2.0",
     "configurations": [
-        
         {
-            "name": "Run CILQR (No Debug)",
+            "name": "Run CILQR (Release)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/main.exe",
+            "program": "${workspaceFolder}/build/bin/main.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -15,32 +14,10 @@
             "preLaunchTask": "CMake Build"
         },
         {
-            "name": "Run CILQR Demo",
+            "name": "Debug CILQR (Release)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/main.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal",
-            "MIMode": "gdb",
-            "miDebuggerPath": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ],
-            "preLaunchTask": "CMake Build",
-            "internalConsoleOptions": "openOnSessionStart"
-        },
-        {
-            "name": "Debug CILQR Demo",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/cilqr_demo/main.exe",
+            "program": "${workspaceFolder}/build/bin/main.exe",
             "args": [],
             "stopAtEntry": true,
             "cwd": "${workspaceFolder}",

@@ -72,20 +72,156 @@ static double rad2deg(double rad) {
     return rad * 180.0 / M_PI;
 }
 
-// 启发式函数：非完整约束下的距离估计
-static double heuristic(double x, double y, double theta, double goal_x, double goal_y, double goal_theta, double turning_radius) {
-    // 欧几里得距离
-    double euclidean_dist = std::hypot(goal_x - x, goal_y - y);
+// DijkstraDistanceMap成员函数实现
+double DijkstraDistanceMap::getDistance(double world_x, double world_y) const {
+    if (!is_valid) {
+        return std::numeric_limits<double>::infinity();
+    }
     
-    // Reed-Shepp距离估计（简化版）
-    double angle_diff = angleDiff(theta, std::atan2(goal_y - y, goal_x - x));
-    double rs_dist = euclidean_dist + turning_radius * angle_diff;
+    // 转换世界坐标到栅格坐标
+    int grid_x = static_cast<int>(std::floor((world_x - origin_x) / resolution));
+    int grid_y = static_cast<int>(std::floor((world_y - origin_y) / resolution));
+    
+    // 检查边界
+    if (grid_x < 0 || grid_x >= width || grid_y < 0 || grid_y >= height) {
+        return std::numeric_limits<double>::infinity();
+    }
+    
+    return distances[grid_y][grid_x];
+}
+
+// Dijkstra算法预计算从目标点到所有栅格点的最短距离
+DijkstraDistanceMap computeDijkstraDistances(const OccupancyGrid& grid, 
+                                           double goal_x, double goal_y) {
+    DijkstraDistanceMap dist_map;
+    dist_map.width = grid.width;
+    dist_map.height = grid.height;
+    dist_map.resolution = grid.resolution;
+    dist_map.origin_x = grid.origin_x;
+    dist_map.origin_y = grid.origin_y;
+    
+    // 初始化距离图
+    dist_map.distances.resize(grid.height, std::vector<double>(grid.width, std::numeric_limits<double>::infinity()));
+    
+    // 转换目标点到栅格坐标
+    int goal_grid_x = static_cast<int>(std::floor((goal_x - grid.origin_x) / grid.resolution));
+    int goal_grid_y = static_cast<int>(std::floor((goal_y - grid.origin_y) / grid.resolution));
+    
+    // 检查目标点是否在地图范围内
+    if (goal_grid_x < 0 || goal_grid_x >= grid.width || 
+        goal_grid_y < 0 || goal_grid_y >= grid.height) {
+        std::cerr << "Goal position is outside the map for Dijkstra computation!" << std::endl;
+        return dist_map;
+    }
+    
+    // 检查目标点是否在障碍物中
+    if (grid.cells[goal_grid_y * grid.width + goal_grid_x] > 0) {
+        std::cerr << "Goal position is occupied for Dijkstra computation!" << std::endl;
+        return dist_map;
+    }
+    
+    // Dijkstra算法使用优先队列
+    struct DijkstraNode {
+        int x, y;
+        double dist;
+        
+        bool operator>(const DijkstraNode& other) const {
+            return dist > other.dist;
+        }
+    };
+    
+    std::priority_queue<DijkstraNode, std::vector<DijkstraNode>, std::greater<DijkstraNode>> pq;
+    std::vector<std::vector<bool>> visited(grid.height, std::vector<bool>(grid.width, false));
+    
+    // 初始化目标点
+    dist_map.distances[goal_grid_y][goal_grid_x] = 0.0;
+    pq.push({goal_grid_x, goal_grid_y, 0.0});
+    
+    // 8连通邻域
+    const int dx[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    const int dy[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    const double costs[] = {
+        std::sqrt(2.0) * grid.resolution, grid.resolution, std::sqrt(2.0) * grid.resolution,
+        grid.resolution, grid.resolution,
+        std::sqrt(2.0) * grid.resolution, grid.resolution, std::sqrt(2.0) * grid.resolution
+    };
+    
+    int processed_nodes = 0;
+    while (!pq.empty()) {
+        DijkstraNode current = pq.top();
+        pq.pop();
+        
+        if (visited[current.y][current.x]) {
+            continue;
+        }
+        
+        visited[current.y][current.x] = true;
+        processed_nodes++;
+        
+        // 每处理1000个节点输出一次进度
+        if (processed_nodes % 10000 == 0) {
+            std::cout << "Dijkstra processed " << processed_nodes << " nodes" << std::endl;
+        }
+        
+        // 遍历8个邻居
+        for (int i = 0; i < 8; ++i) {
+            int nx = current.x + dx[i];
+            int ny = current.y + dy[i];
+            
+            // 检查边界
+            if (nx < 0 || nx >= grid.width || ny < 0 || ny >= grid.height) {
+                continue;
+            }
+            
+            // 检查是否已访问
+            if (visited[ny][nx]) {
+                continue;
+            }
+            
+            // 检查邻居是否在边界内且不是障碍物
+            if (grid.cells[ny * grid.width + nx] > 0) {
+                continue;
+            }
+            
+            // 计算新距离
+            double new_dist = current.dist + costs[i];
+            
+            // 如果找到更短路径，更新距离
+            if (new_dist < dist_map.distances[ny][nx]) {
+                dist_map.distances[ny][nx] = new_dist;
+                pq.push({nx, ny, new_dist});
+            }
+        }
+    }
+    
+    std::cout << "Dijkstra computation completed. Processed " << processed_nodes << " nodes." << std::endl;
+    dist_map.is_valid = true;
+    return dist_map;
+}
+
+// 启发式函数：使用Dijkstra预计算距离
+static double heuristic(double x, double y, double theta, double goal_x, double goal_y, double goal_theta, 
+                        double turning_radius, const DijkstraDistanceMap* dijkstra_map = nullptr) {
+    double base_dist;
+    
+    if (dijkstra_map && dijkstra_map->is_valid) {
+        // 使用Dijkstra预计算的真实距离
+        base_dist = dijkstra_map->getDistance(x, y);
+        
+        // 如果无法获取Dijkstra距离，回退到欧几里得距离
+        if (base_dist == std::numeric_limits<double>::infinity()) {
+            base_dist = std::hypot(goal_x - x, goal_y - y);
+        }
+    } else {
+        // 回退到原始的欧几里得距离
+        base_dist = std::hypot(goal_x - x, goal_y - y);
+    }
     
     // 目标朝向差异惩罚
     double heading_diff = angleDiff(theta, goal_theta);
     double heading_penalty = turning_radius * 0.5 * heading_diff;
     
-    return rs_dist + heading_penalty;
+    return base_dist + heading_penalty;
 }
 
 // 生成运动原语
@@ -93,7 +229,8 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
     const std::shared_ptr<HybridAStarNode>& current,
     const HybridAStarParams& params,
     const OccupancyGrid& grid,
-    double goal_x, double goal_y, double goal_theta) {
+    double goal_x, double goal_y, double goal_theta,
+    const DijkstraDistanceMap* dijkstra_map = nullptr) {
     
     std::vector<std::shared_ptr<HybridAStarNode>> neighbors;
     
@@ -146,7 +283,7 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
         double g = current->g + params.move_step + steering_cost + direction_change_cost + clearance_cost;
         
         // 计算启发式
-        double h = params.heuristic_weight * heuristic(next_x, next_y, next_theta, goal_x, goal_y, next_theta, params.turning_radius);
+        double h = params.heuristic_weight * heuristic(next_x, next_y, next_theta, goal_x, goal_y, next_theta, params.turning_radius, dijkstra_map);
         
         // 创建新节点
         auto node = std::make_shared<HybridAStarNode>();
@@ -195,7 +332,7 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
             double g = current->g + params.move_step_backwards * params.backwards_penalty + steering_cost + direction_change_cost + clearance_cost;
             
             // 计算启发式
-            double h = params.heuristic_weight * heuristic(next_x, next_y, next_theta, goal_x, goal_y, next_theta, params.turning_radius);
+            double h = params.heuristic_weight * heuristic(next_x, next_y, next_theta, goal_x, goal_y, next_theta, params.turning_radius, dijkstra_map);
             
             // 创建新节点
             auto node = std::make_shared<HybridAStarNode>();
@@ -385,13 +522,22 @@ bool hybrid_astar_plan(const MapData& map,
         return false;
     }
     
+    // 2.5) 预计算Dijkstra距离图
+    std::cout << "Computing Dijkstra distance map from goal..." << std::endl;
+    DijkstraDistanceMap dijkstra_map = computeDijkstraDistances(grid, goal_x, goal_y);
+    if (!dijkstra_map.is_valid) {
+        std::cerr << "Failed to compute Dijkstra distance map, falling back to Euclidean heuristic" << std::endl;
+    } else {
+        std::cout << "Dijkstra distance map computed successfully" << std::endl;
+    }
+    
     // 3) 初始化起始节点
     auto start_node = std::make_shared<HybridAStarNode>();
     start_node->x = start_x;
     start_node->y = start_y;
     start_node->theta = start_theta;
     start_node->g = 0.0;
-    start_node->f = heuristic(start_x, start_y, start_theta, goal_x, goal_y, goal_theta, params.turning_radius);
+    start_node->f = heuristic(start_x, start_y, start_theta, goal_x, goal_y, goal_theta, params.turning_radius, &dijkstra_map);
     start_node->grid_x = start_grid_x;
     start_node->grid_y = start_grid_y;
     start_node->grid_theta = static_cast<int>(std::floor(rad2deg(start_theta + M_PI) / params.heading_resolution)) % 
@@ -468,7 +614,7 @@ bool hybrid_astar_plan(const MapData& map,
         closed_set.insert(current_key);
 
         // 生成邻居节点
-        auto neighbors = getNeighbors(current, params, grid, goal_x, goal_y, goal_theta);
+        auto neighbors = getNeighbors(current, params, grid, goal_x, goal_y, goal_theta, &dijkstra_map);
         // 调试：邻居统计
         if (iterations % 100 == 0) {
             int attempted = params.num_steering_angles * (params.allow_reverse ? 2 : 1);

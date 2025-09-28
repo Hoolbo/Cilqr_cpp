@@ -1289,7 +1289,7 @@ bool plan_global_path(const MapData& bitmap_map,
         hparams.num_steering_angles = 7; // was 5, finer angular options
         hparams.heading_resolution = 5.0; // was default 10 deg, finer heading bins
         hparams.allow_reverse = false; // enable reverse to escape local traps
-        hparams.heuristic_weight = 3.0; // make search more goal-directed
+        hparams.heuristic_weight = 2.0; // make search more goal-directed
         hparams.max_iterations = 200000; // was 20000, allow more iterations if needed
         hparams.num_nodes_to_keep = 60000; // was 30000, reduce pruning pressure
         hparams.goal_tolerance_xy = 0.8;
