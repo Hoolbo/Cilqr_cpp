@@ -21,8 +21,14 @@ int main(int argc, char** argv){
     std::cout << "Variables initialized successfully." << std::endl;
 
     // 起点/终点变量（支持从命令行参数获取：start_x start_y start_theta goal_x goal_y goal_theta）
-    double start_x = 70, start_y = 20.0, start_theta = 1;
-    double goal_x = 40, goal_y = 100.0, goal_theta = 2;
+    double start_x = 70, start_y = 60, start_theta = 1.2;
+    double goal_x = 180, goal_y = 127, goal_theta = 1.8;
+    double ITER = 280;
+    std::string solver_type = "cilqr";
+    // 地图选择 - 修改这里来切换不同的地图
+    // B201 -- B210
+    // B301 -- B310
+    std::string selected_map = "B301";  // 修改这里来选择不同的地图
     if (argc >= 7) {
         try {
             start_x = std::stod(argv[1]);
@@ -35,13 +41,17 @@ int main(int argc, char** argv){
             std::cerr << "Invalid start/goal input; using defaults." << std::endl;
         }
     }
+    for(int ai=7; ai<argc; ++ai){
+        std::string a = argv[ai];
+        if(a == "--solver" && ai+1 < argc){
+            solver_type = argv[ai+1];
+            ++ai;
+        }
+    }
     std::cout << "Start: (" << start_x << ", " << start_y << ", " << start_theta << ") | "
               << "Goal: (" << goal_x << ", " << goal_y << ", " << goal_theta << ")" << std::endl;
     
-    // 地图选择 - 修改这里来切换不同的地图
-    // B201 -- B210
-    // B301 -- B310
-    std::string selected_map = "B207";  // 修改这里来选择不同的地图
+
     std::string map_file = resolve_resource_path("Maps/bitmap/" + selected_map + "_global_map.json");
     std::cout << "Loading map file: " << map_file << " (Selected: " << selected_map << ")" << std::endl;
     
@@ -117,15 +127,22 @@ int main(int argc, char** argv){
 
     //参数初始化
     Arg arg;
-    // 结合铰接车模型推导保守曲率/半径限值，并映射到转向速率代价限位（占位映射）
+    // 结合铰接车模型推导保守曲率/半径限值，并映射到铰接角约束（占位映射）
     SystemModel tmp_model; // 用于尺寸参数
     ArticulatedLimits lims = compute_articulated_limits(tmp_model, 0.35); // 保守机械上限 0.35rad
-    arg.if_cal_steer_cost = true;
-    // 将曲率限值粗略映射到转向速率上下限：omega ≈ v * kappa_max，取期望速度的 0.5 倍作为保守因子
+    
+    // 设置铰接角gamma的barrier约束
+    arg.if_cal_gamma_barrier = true;
+    arg.gamma_max = 1.0;  // 铰接角上限
+    arg.gamma_min = -1.0; // 铰接角下限
+    
+    // 设置铰接角速度gamma_dot的barrier约束
+    arg.if_cal_gamma_dot_barrier = true;
+    // 将曲率限值粗略映射到铰接角速度上下限：omega ≈ v * kappa_max，取期望速度的 0.5 倍作为保守因子
     double omega_bound = std::max(0.1, 0.5 * arg.desire_speed * lims.kappa_max);
     omega_bound = std::min(omega_bound, 0.4); // 上限再加一道保守夹紧
-    arg.steer_angle_max = omega_bound;
-    arg.steer_angle_min = -omega_bound;
+    arg.gamma_dot_max = omega_bound;
+    arg.gamma_dot_min = -omega_bound;
 
     //车辆模型初始化
     Vehicle ego;
@@ -136,13 +153,43 @@ int main(int argc, char** argv){
         ego_log[i].push_back(ego.get_state()[i]);
     }
     
-    //障碍物初始化 - 支持多障碍物
-    std::vector<State> obs_initial_states = {
-
-        State(54, 43, 2.35, 1.5), 
-        // 可以添加更多障碍物，例如:
-        State(47, 35, 2.35, 0.5)  // 障碍物2
-    };
+    OccupancyGrid grid = make_occupancy_grid(bitmap_map, 0.1, 0.5);
+    const auto& planned_points = global_plan.get_points();
+    size_t M = planned_points.size();
+    auto P = [&](size_t i){ return Eigen::Vector2d(planned_points[i].x, planned_points[i].y); };
+    auto Th = [&](size_t i){ return planned_points[i].heading; };
+    size_t idx_turn = 0; double best_curv = 0.0;
+    for(size_t i=1;i+1<M;i++){
+        Eigen::Vector2d t0 = P(i) - P(i-1);
+        Eigen::Vector2d t1 = P(i+1) - P(i);
+        double a0 = std::atan2(t0.y(), t0.x());
+        double a1 = std::atan2(t1.y(), t1.x());
+        double d = std::atan2(std::sin(a1 - a0), std::cos(a1 - a0));
+        double c = std::abs(d);
+        if(c > best_curv){ best_curv = c; idx_turn = i; }
+    }
+    double th_turn = Th(idx_turn);
+    Eigen::Vector2d n_turn(-std::sin(th_turn), std::cos(th_turn));
+    Eigen::Vector2d p_turn = P(idx_turn);
+    double dpt = nearest_obstacle_distance_world(grid, p_turn + 0.5 * n_turn);
+    double dmt = nearest_obstacle_distance_world(grid, p_turn - 0.5 * n_turn);
+    Eigen::Vector2d n_turn_side = (dpt < dmt) ? n_turn : -n_turn;
+    double offset_turn = 3.0;
+    State obs1(p_turn.x() + offset_turn * n_turn_side.x(), p_turn.y() + offset_turn * n_turn_side.y(), th_turn, 0.0);
+    size_t idx_bottle = 0; double best_clear = 1e9;
+    for(size_t i=0;i<M;i++){
+        double clr = nearest_obstacle_distance_world(grid, P(i));
+        if(clr < best_clear){ best_clear = clr; idx_bottle = i; }
+    }
+    double th_b = Th(idx_bottle);
+    Eigen::Vector2d n_b(-std::sin(th_b), std::cos(th_b));
+    Eigen::Vector2d p_b = P(idx_bottle);
+    double dpb = nearest_obstacle_distance_world(grid, p_b + 0.5 * n_b);
+    double dmb = nearest_obstacle_distance_world(grid, p_b - 0.5 * n_b);
+    Eigen::Vector2d n_b_side = (dpb < dmb) ? n_b : -n_b;
+    double offset_b = std::max(1.0, best_clear * 0.8);
+    State obs2(p_b.x() + offset_b * n_b_side.x(), p_b.y() + offset_b * n_b_side.y(), th_b, 0.0);
+    std::vector<State> obs_initial_states = { obs1, obs2 };
     
     std::vector<Trajectory> obs_trajectories;
     std::vector<State> current_obs_states;
@@ -165,6 +212,7 @@ int main(int argc, char** argv){
 
     //求解器初始化
     CILQRSolver cilqr_solver(ego, obs_trajectories, arg);
+    ALILQRSolver alilqr_solver(ego, obs_trajectories, arg);
     Solution solution;
     Control cur_ctrl;
     State cur_state = ego.get_state();
@@ -172,22 +220,21 @@ int main(int argc, char** argv){
 
     //主循环
     // for(int i = 0;i<arg.tf/arg.dt;i++){
-    for(int i = 0;i<50;i++){
+    for(int i = 0;i<ITER;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
-        
-        // 显示当前所有障碍物状态
-        // for(size_t obs_idx = 0; obs_idx < current_obs_states.size(); obs_idx++) {
-        //     const State& current_obs_state = current_obs_states[obs_idx];
-        //     std::cout << "Obstacle " << obs_idx + 1 << " current state: x=" << current_obs_state[0] << ", y=" << current_obs_state[1] << ", theta=" << current_obs_state[2] << ", v=" << current_obs_state[3] << std::endl;
-        //     std::cout << "Obstacle " << obs_idx + 1 << " predicted trajectory size: " << obs_trajectories[obs_idx].states.size() << std::endl;
-        // }
         
         // 问题求解
         clock_t start = clock();
-        solution = cilqr_solver.solve(cur_state, obs_trajectories); 
+        if(solver_type == "al"){
+            solution = alilqr_solver.solve(cur_state, obs_trajectories);
+        } else {
+            solution = cilqr_solver.solve(cur_state, obs_trajectories);
+        }
         clock_t end = clock();
         double cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
         std::cout << "CPU time used: " << cpu_time_used * 1000 << " ms\n";
+        double cmax = compute_max_violation(solution, ego, obs_trajectories, arg);
+        std::cout << "CMax: " << cmax << "\n";
 
         //更新车辆状态以及控制
         cur_ctrl = solution.control_sequence.controls[0];

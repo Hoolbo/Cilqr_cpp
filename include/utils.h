@@ -127,7 +127,7 @@ bool is_collision_free_segment(const OccupancyGrid& grid, const Eigen::Vector2d&
 // 折线整体碰撞检测（逐段采样）
 bool is_collision_free_polyline(const OccupancyGrid& grid, const std::vector<Eigen::Vector2d>& pts);
 // 查询世界坐标点到最近障碍栅格中心的距离（米）；若附近无障碍则返回一个大数
-double nearest_obstacle_distance_world(const OccupancyGrid& grid, const Eigen::Vector2d& p);
+    double nearest_obstacle_distance_world(const OccupancyGrid& grid, const Eigen::Vector2d& p);
 
 void fill_global_path_points(std::vector<std::vector<double>>& global_plan_log);
 void set_global_path(GlobalPlan& global_plan, const std::vector<std::vector<double>>& global_plan_log);
@@ -165,6 +165,10 @@ std::vector<Eigen::Vector2d> optimize_path_qp(const std::vector<Eigen::Vector2d>
                                               const OccupancyGrid& grid,
                                               int iterations = 35,
                                               double curvature_weight = 1200.0);
+
+
+
+double compute_max_violation(const Solution& solution, Vehicle& ego, const std::vector<Trajectory>& obs_list, const Arg& arg);
 
 
 

@@ -51,10 +51,13 @@ namespace std {
 }
 
 // 角度标准化到[-π, π]
+// 使用统一的角度归一化函数
 static double normalizeAngle(double angle) {
-    while (angle > M_PI) angle -= 2.0 * M_PI;
-    while (angle < -M_PI) angle += 2.0 * M_PI;
-    return angle;
+    angle = fmod(angle + M_PI, 2.0*M_PI); 
+    if (angle < 0.0){
+        angle += 2.0*M_PI;
+    }
+    return angle - M_PI;
 }
 
 // 角度差的绝对值（弧度）
@@ -234,18 +237,18 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
     
     std::vector<std::shared_ptr<HybridAStarNode>> neighbors;
     
-    // 转向角度集合
-    std::vector<double> steering_angles;
-    double max_steer = std::atan(params.move_step / params.turning_radius);
-    double steer_step = 2.0 * max_steer / (params.num_steering_angles - 1);
+    // 铰接角度集合
+    std::vector<double> gamma_angles;
+    double max_gamma = std::atan(params.move_step / params.turning_radius);
+    double gamma_step = 2.0 * max_gamma / (params.num_gamma_angles - 1);
     
-    for (int i = 0; i < params.num_steering_angles; ++i) {
-        steering_angles.push_back(-max_steer + i * steer_step);
+    for (int i = 0; i < params.num_gamma_angles; ++i) {
+        gamma_angles.push_back(-max_gamma + i * gamma_step);
     }
     
     // 前进方向的运动原语
-    for (double steer : steering_angles) {
-        double next_theta = normalizeAngle(current->theta + steer);
+    for (double gamma : gamma_angles) {
+        double next_theta = normalizeAngle(current->theta + gamma);
         double dx = params.move_step * std::cos(next_theta);
         double dy = params.move_step * std::sin(next_theta);
         double next_x = current->x + dx;
@@ -255,7 +258,7 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
         // if (neighbors.empty()) {
             // std::cout << "Trying neighbor: (" << next_x << ", " << next_y << ", " << next_theta << ")" << std::endl;
             // std::cout << "Current: (" << current->x << ", " << current->y << ", " << current->theta << ")" << std::endl;
-            // std::cout << "Move step: " << params.move_step << ", steer: " << steer << std::endl;
+            // std::cout << "Move step: " << params.move_step << ", gamma: " << gamma << std::endl;
             
             // bool collision_free = is_collision_free_segment(grid, Eigen::Vector2d(current->x, current->y), Eigen::Vector2d(next_x, next_y));
             // std::cout << "Collision free: " << (collision_free ? "yes" : "no") << std::endl;
@@ -273,14 +276,14 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
                          static_cast<int>(360.0 / params.heading_resolution);
         
         // 计算代价
-        double steering_cost = params.steering_penalty * std::abs(steer);
+        double gamma_cost = params.steering_penalty * std::abs(gamma);
         double direction_change_cost = current->parent && current->is_forward != true ? params.direction_change_penalty : 0.0;
         // 清距代价：若距离障碍小于期望清距，则按比例惩罚（平方增强）
         double c_next = nearest_obstacle_distance_world(grid, Eigen::Vector2d(next_x, next_y));
         double c_clamp = std::min(c_next, params.max_clearance);
         double lack = std::max(0.0, params.desired_clearance - c_clamp);
         double clearance_cost = params.clearance_weight * std::pow(lack / std::max(1e-3, params.desired_clearance), 2.0);
-        double g = current->g + params.move_step + steering_cost + direction_change_cost + clearance_cost;
+        double g = current->g + params.move_step + gamma_cost + direction_change_cost + clearance_cost;
         
         // 计算启发式
         double h = params.heuristic_weight * heuristic(next_x, next_y, next_theta, goal_x, goal_y, next_theta, params.turning_radius, dijkstra_map);
@@ -303,8 +306,8 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
     
     // 如果允许倒车，添加后退的运动原语
     if (params.allow_reverse) {
-        for (double steer : steering_angles) {
-            double next_theta = normalizeAngle(current->theta - steer); // 注意倒车时转向相反
+        for (double gamma : gamma_angles) {
+            double next_theta = normalizeAngle(current->theta - gamma); // 注意倒车时铰接角相反
             double dx = -params.move_step_backwards * std::cos(next_theta);
             double dy = -params.move_step_backwards * std::sin(next_theta);
             double next_x = current->x + dx;
@@ -322,14 +325,14 @@ static std::vector<std::shared_ptr<HybridAStarNode>> getNeighbors(
                              static_cast<int>(360.0 / params.heading_resolution);
             
             // 计算代价（倒车有额外惩罚）
-            double steering_cost = params.steering_penalty * std::abs(steer);
+            double gamma_cost = params.steering_penalty * std::abs(gamma);
             double direction_change_cost = current->parent && current->is_forward != false ? params.direction_change_penalty : 0.0;
             // 清距代价
             double c_next = nearest_obstacle_distance_world(grid, Eigen::Vector2d(next_x, next_y));
             double c_clamp = std::min(c_next, params.max_clearance);
             double lack = std::max(0.0, params.desired_clearance - c_clamp);
             double clearance_cost = params.clearance_weight * std::pow(lack / std::max(1e-3, params.desired_clearance), 2.0);
-            double g = current->g + params.move_step_backwards * params.backwards_penalty + steering_cost + direction_change_cost + clearance_cost;
+            double g = current->g + params.move_step_backwards * params.backwards_penalty + gamma_cost + direction_change_cost + clearance_cost;
             
             // 计算启发式
             double h = params.heuristic_weight * heuristic(next_x, next_y, next_theta, goal_x, goal_y, next_theta, params.turning_radius, dijkstra_map);
@@ -396,7 +399,10 @@ static bool tryRSConnect(const HybridAStarNode& current,
     double th = current.theta;
 
     auto angle_diff = [](double a, double b){
-        double d = a - b; while (d > M_PI) d -= 2*M_PI; while (d < -M_PI) d += 2*M_PI; return d;
+        double d = a - b; 
+        d = fmod(d + M_PI, 2.0*M_PI); 
+        if (d < 0.0) d += 2.0*M_PI;
+        return d - M_PI;
     };
 
     // Bearing to goal
@@ -617,7 +623,7 @@ bool hybrid_astar_plan(const MapData& map,
         auto neighbors = getNeighbors(current, params, grid, goal_x, goal_y, goal_theta, &dijkstra_map);
         // 调试：邻居统计
         if (iterations % 100 == 0) {
-            int attempted = params.num_steering_angles * (params.allow_reverse ? 2 : 1);
+            int attempted = params.num_gamma_angles * (params.allow_reverse ? 2 : 1);
             std::cout << "Neighbors attempted=" << attempted << ", accepted=" << neighbors.size() << std::endl;
         }
         // 处理每个邻居
@@ -723,10 +729,10 @@ bool hybrid_astar_plan(const MapData& map,
         double heading = 0.0;
         if (i + 1 < fitted_path.size()) {
             Eigen::Vector2d d = fitted_path[i+1] - fitted_path[i];
-            heading = std::atan2(d.y(), d.x());
+            heading = normalizeAngle(std::atan2(d.y(), d.x()));
         } else if (i > 0) {
             Eigen::Vector2d d = fitted_path[i] - fitted_path[i-1];
-            heading = std::atan2(d.y(), d.x());
+            heading = normalizeAngle(std::atan2(d.y(), d.x()));
         }
         out_points.emplace_back(fitted_path[i].x(), fitted_path[i].y(), heading);
     }

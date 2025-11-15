@@ -25,6 +25,15 @@
 
 #include "hybrid_astar.h"
 
+// 角度归一化函数
+static double normalize_angle(double angle) {
+    angle = fmod(angle + M_PI, 2.0*M_PI); 
+    if (angle < 0.0){
+        angle += 2.0*M_PI;
+    }
+    return angle - M_PI;
+}
+
 // ---- Grid A* fallback helpers to avoid obstacle penetration ----
 struct AStarNode {
     int x; int y; double g; double f; int px; int py;
@@ -300,7 +309,7 @@ std::vector<Eigen::Vector2d> smooth_path(const std::vector<Eigen::Vector2d>& pat
                 if (L1 > t + 0.15 && L2 > t + 0.15) {
                     Eigen::Vector2d T1 = p1 - d1 * t; // 第一段的切点
                     Eigen::Vector2d T2 = p1 + d2 * t; // 第二段的切点
-                    // 计算转向方向（左/右）
+                    // 计算铰接角方向（左/右）
                     double cross = d1.x() * d2.y() - d1.y() * d2.x();
                     double sgn = (cross >= 0.0) ? 1.0 : -1.0;
                     Eigen::Vector2d n1 = rot90(d1) * sgn; // 指向圆心的法向
@@ -311,9 +320,13 @@ std::vector<Eigen::Vector2d> smooth_path(const std::vector<Eigen::Vector2d>& pat
                     // 采样圆弧
                     double a1 = std::atan2(T1.y() - C.y(), T1.x() - C.x());
                     double a2 = std::atan2(T2.y() - C.y(), T2.x() - C.x());
-                    // 保证按照转向方向采样
+                    // 保证按照铰接角方向采样
                     auto angle_diff = [&](double from, double to){
-                        double d = to - from; while (d > M_PI) d -= 2*M_PI; while (d < -M_PI) d += 2*M_PI; return d; };
+                        double d = to - from; 
+                        d = fmod(d + M_PI, 2.0*M_PI); 
+                        if (d < 0.0) d += 2.0*M_PI;
+                        return d - M_PI;
+                    };
                     double delta = angle_diff(a1, a2);
                     int m = std::max(8, (int)std::ceil(std::abs(delta) / (10.0 * M_PI / 180.0))); // 每~10度一个点
                     // 检查与插入：保证与前/后段及圆弧段都不碰撞
@@ -1190,10 +1203,10 @@ bool rrt_star_plan(const MapData& map,
                 double heading = 0.0;
                 if (i + 1 < fitted_path.size()) {
                     Eigen::Vector2d d = fitted_path[i+1] - fitted_path[i];
-                    heading = std::atan2(d.y(), d.x());
+                    heading = normalize_angle(std::atan2(d.y(), d.x()));
                 } else if (i > 0) {
                     Eigen::Vector2d d = fitted_path[i] - fitted_path[i-1];
-                    heading = std::atan2(d.y(), d.x());
+                    heading = normalize_angle(std::atan2(d.y(), d.x()));
                 }
                 out_points.emplace_back(fitted_path[i].x(), fitted_path[i].y(), heading);
             }
@@ -1286,33 +1299,60 @@ bool plan_global_path(const MapData& bitmap_map,
         hparams.turning_radius = 5.0;
         hparams.move_step = 0.5; // was 0.4, speed up progress per expansion
         hparams.move_step_backwards = 0.4; // was 0.3, keep ratio similar
-        hparams.num_steering_angles = 7; // was 5, finer angular options
+        hparams.num_gamma_angles = 7; // was 5, finer angular options
         hparams.heading_resolution = 5.0; // was default 10 deg, finer heading bins
         hparams.allow_reverse = false; // enable reverse to escape local traps
+        hparams.steering_penalty = 0.4;     // 铰接角代价系数
+        hparams.direction_change_penalty = 3; // 换向惩罚
         hparams.heuristic_weight = 2.0; // make search more goal-directed
         hparams.max_iterations = 200000; // was 20000, allow more iterations if needed
         hparams.num_nodes_to_keep = 60000; // was 30000, reduce pruning pressure
         hparams.goal_tolerance_xy = 0.8;
         hparams.goal_tolerance_heading = 15.0;
         // 清距偏好（让路径更远离障碍物）
-        hparams.clearance_weight = 12;     // 清距代价权重（越大越偏好远离障碍）
+        hparams.clearance_weight = 1;     // 清距代价权重（越大越偏好远离障碍）
         hparams.desired_clearance = 3;    // 期望与障碍的最小距离（米），小于该值增加代价
         hparams.max_clearance = 12.0;       // 清距归一化的上限（米），避免过大距离影响代价
         hparams.min_rs_clearance = 3;     // RS解析路径的最小允许清距（米），低于则拒绝解析连接
         std::cout << "Attempting Hybrid A* planning..." << std::endl;
         if (hybrid_astar_plan(bitmap_map, start, goal, points, hparams)) {
             std::cout << "Hybrid A* planning succeeded! Raw path points: " << points.size() << std::endl;
-            std::cout << "[RAW PATH] 直接使用混合A*原始路径，跳过所有平滑处理" << std::endl;
             
-            // 直接使用混合A*的原始路径，不进行任何平滑处理
-            // 混合A*已经考虑了车辆运动学约束，路径应该是可行的
+            // 将混合A*路径转换为Eigen::Vector2d格式用于QP平滑
+            std::vector<Eigen::Vector2d> hybrid_path;
+            for (const auto& point : points) {
+                hybrid_path.emplace_back(point.x, point.y);
+            }
             
             // 确保目标点被正确添加（避免重复添加）
             if (points.empty() || std::hypot(points.back().x - goal[0], points.back().y - goal[1]) > 1e-3) {
                 points.emplace_back(goal[0], goal[1], goal[2]);
+                hybrid_path.emplace_back(goal[0], goal[1]);
             }
             
-            out_plan.set_plan(points);
+            // 应用QP平滑到混合A*路径
+            std::cout << "[QP SMOOTHING] 对混合A*路径进行QP平滑处理..." << std::endl;
+            OccupancyGrid grid = make_occupancy_grid(bitmap_map, 0.05, 1.0);
+            std::vector<Eigen::Vector2d> smoothed_hybrid_path = optimize_path_qp(hybrid_path, grid, 35, 1200.0);
+            std::cout << "QP平滑完成，平滑后路径点数: " << smoothed_hybrid_path.size() << std::endl;
+            
+            // 将平滑后的路径转换回Point格式
+            std::vector<Point> smoothed_points;
+            for (size_t i = 0; i < smoothed_hybrid_path.size(); ++i) {
+                double heading = 0.0;
+                if (i < smoothed_hybrid_path.size() - 1) {
+                    double dx = smoothed_hybrid_path[i+1].x() - smoothed_hybrid_path[i].x();
+                    double dy = smoothed_hybrid_path[i+1].y() - smoothed_hybrid_path[i].y();
+                    heading = normalize_angle(std::atan2(dy, dx));
+                } else if (i > 0) {
+                    double dx = smoothed_hybrid_path[i].x() - smoothed_hybrid_path[i-1].x();
+                    double dy = smoothed_hybrid_path[i].y() - smoothed_hybrid_path[i-1].y();
+                    heading = normalize_angle(std::atan2(dy, dx));
+                }
+                smoothed_points.emplace_back(smoothed_hybrid_path[i].x(), smoothed_hybrid_path[i].y(), heading);
+            }
+            
+            out_plan.set_plan(smoothed_points);
             return true;
         } else {
             std::cout << "Hybrid A* planning failed, falling back to direct line check..." << std::endl;
@@ -1328,7 +1368,7 @@ bool plan_global_path(const MapData& bitmap_map,
         double dx = goal[0] - start[0];
         double dy = goal[1] - start[1];
         double dist = std::hypot(dx, dy);
-        double heading = std::atan2(dy, dx);
+        double heading = normalize_angle(std::atan2(dy, dx));
         int steps = std::max(200, (int)std::round(dist / 0.1));
         steps = std::min(steps, 1500);
         points.reserve(steps + 1);
@@ -1372,7 +1412,7 @@ bool plan_global_path(const MapData& bitmap_map,
         double hx = 0.0, hy = 0.0;
         if (i + 1 < fitted_astar.size()) { hx = fitted_astar[i+1].x() - fitted_astar[i].x(); hy = fitted_astar[i+1].y() - fitted_astar[i].y(); }
         else if (i > 0) { hx = fitted_astar[i].x() - fitted_astar[i-1].x(); hy = fitted_astar[i].y() - fitted_astar[i-1].y(); }
-        double heading = std::atan2(hy, hx);
+        double heading = normalize_angle(std::atan2(hy, hx));
         points.emplace_back(fitted_astar[i].x(), fitted_astar[i].y(), heading);
     }
     std::cout << "Fallback A* path generated with " << points.size() << " points (after B-spline fitting check)" << std::endl;
@@ -1681,7 +1721,7 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
             }
             data_file << "],\n";
             
-            data_file << "    \"steering\": [";
+            data_file << "    \"gamma\": [";
             for (size_t i = 0; i < solution.control_sequence.controls.size(); ++i) {
                 data_file << solution.control_sequence.controls[i][1];
                 if (i < solution.control_sequence.controls.size() - 1) data_file << ", ";
@@ -1689,7 +1729,7 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
             data_file << "]\n";
         } else {
             data_file << "    \"velocity\": [],\n";
-            data_file << "    \"steering\": []\n";
+            data_file << "    \"gamma\": []\n";
         }
         data_file << "  },\n";
         
@@ -1853,4 +1893,52 @@ Trajectory predict_obstacle_trajectory(const State& initial_state, double dt, in
     }
     
     return predicted_trajectory;
+}
+double compute_max_violation(const Solution& solution, Vehicle& ego, const std::vector<Trajectory>& obs_list, const Arg& arg){
+    const auto& X_traj = solution.ego_trj.get_states();
+    const auto& U = solution.control_sequence.get_control_sequence();
+    double cmax = 0.0;
+    for (int i = 0; i <= arg.N; ++i) {
+        const State& X = X_traj[i];
+        double gamma = X[3];
+        cmax = std::max(cmax, std::max(0.0, gamma - arg.gamma_max));
+        cmax = std::max(cmax, std::max(0.0, arg.gamma_min - gamma));
+        if (arg.if_cal_lane_cost) {
+            const auto& local_plan = ego.get_local_plan().get_points();
+            size_t index = find_closest_point(local_plan, X);
+            size_t match_index = index == local_plan.size() - 1 ? index : index + 1;
+            const Point& X_r_point = local_plan[match_index];
+            State X_r; X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
+            State X_e = X - X_r;
+            Vector2d dX(X_e[0], X_e[1]);
+            Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+            double l = dX.dot(nor_r);
+            cmax = std::max(cmax, std::max(0.0, l - arg.trace_safe_width_left));
+            cmax = std::max(cmax, std::max(0.0, -l - arg.trace_safe_width_right));
+        }
+        if (arg.if_cal_obs_cost) {
+            for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
+                const Trajectory& obs = obs_list[obs_idx];
+                if (i >= obs.get_states().size()) continue;
+                const State& obs_state = obs.get_states()[i];
+                double dx = X[0] - obs_state[0];
+                double dy = X[1] - obs_state[1];
+                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
+                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
+                Vector2d dX_obs(dx, dy);
+                Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
+                Vector2d dX_obs_cord = R * dX_obs;
+                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                cmax = std::max(cmax, std::max(0.0, c));
+            }
+        }
+    }
+    for (int i = 0; i < arg.N; ++i) {
+        const Vector2d u = U[i];
+        double c_umax = std::max(0.0, u[1] - arg.gamma_dot_max);
+        double c_umin = std::max(0.0, arg.gamma_dot_min - u[1]);
+        cmax = std::max(cmax, c_umax);
+        cmax = std::max(cmax, c_umin);
+    }
+    return cmax;
 }

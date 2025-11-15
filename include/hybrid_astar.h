@@ -15,11 +15,11 @@ struct HybridAStarParams {
     double move_step = 1;            // 前进步长（米）
     double move_step_backwards = 0.3;  // 倒退步长（米）
     bool   allow_reverse = false;       // 允许倒车
-    int    num_steering_angles = 5;    // 转角离散数
-    double steering_penalty = 0.2;     // 转向代价系数
+    int    num_gamma_angles = 5;    // 铰接角离散数
+    double steering_penalty = 0.2;     // 铰接角代价系数
     double direction_change_penalty = 1.5; // 换向惩罚
     double backwards_penalty = 1.2;    // 倒车惩罚
-    double heuristic_weight = 100.0;     // 启发式权重
+    double heuristic_weight = 1.0;     // 启发式权重
 
     // 终止条件与裁剪
     int    max_iterations = 60000;     // 最大迭代
@@ -34,7 +34,7 @@ struct HybridAStarParams {
     double clearance_weight = 12;     // 清距代价权重（越大越偏好远离障碍）
     double desired_clearance = 3;    // 期望与障碍的最小距离（米），小于该值增加代价
     double max_clearance = 12.0;       // 清距归一化的上限（米），避免过大距离影响代价
-    double min_rs_clearance = 3;     // RS解析路径的最小允许清距（米），低于则拒绝解析连接
+    double min_rs_clearance = 1.5;     // RS解析路径的最小允许清距（米），低于则拒绝解析连接
 };
 
 // Dijkstra预计算距离图
