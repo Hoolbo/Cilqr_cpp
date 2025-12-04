@@ -1,0 +1,24 @@
+{
+    "hybrid_astar": {
+        "grid_resolution": 0.05,
+        "heading_resolution": 5.0,
+        "turning_radius": 5.0,
+        "move_step": 0.5,
+        "move_step_backwards": 0.4,
+        "allow_reverse": false,
+        "num_gamma_angles": 7,
+        "steering_penalty": 0.4,
+        "direction_change_penalty": 3.0,
+        "backwards_penalty": 1.2,
+        "heuristic_weight": 2.0,
+        "max_iterations": 200000,
+        "num_nodes_to_keep": 60000,
+        "inflation_radius": 2.0,
+        "goal_tolerance_xy": 0.8,
+        "goal_tolerance_heading": 15.0,
+        "clearance_weight": 1.0,
+        "desired_clearance": 3.0,
+        "max_clearance": 12.0,
+        "min_rs_clearance": 3.0
+    }
+}

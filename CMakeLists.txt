@@ -54,6 +54,7 @@ set(MAIN_SOURCES
     src/ilqr.cpp
     src/utils.cpp
     src/hybrid_astar.cpp
+    src/config_loader.cpp
 )
 add_executable(main ${MAIN_SOURCES})
 

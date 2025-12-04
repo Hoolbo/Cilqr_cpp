@@ -3,37 +3,29 @@
 #include <vector>
 #include <cstdint>
 // #include "mclmcrrt.h"
-#include "matplotlibcpp.h"
+// #include "matplotlibcpp.h" // Removed to speed up compilation
 #include "Eigen/Eigen"
-#include "ilqr.h"
+// #include "ilqr.h" // Removed to reduce coupling
+#include "common_types.h"
 #include <memory>
 #include <string>
 #include <sstream>
 #include <fstream>
 
-// 地图数据结构
-struct MapData {
-    int width;
-    int height;
-    double resolution;
-    std::vector<double> origin;
-    double max_elevation;
-    std::vector<std::vector<double>> data;
-};
+// Forward declarations
+class GlobalPlan;
+class Trajectory;
+struct Solution;
+class SystemModel;
+struct Arg;
+class Vehicle;
+struct HybridAStarParams;
 
-// 语义地图点结构
-struct SemanticMapPoint {
-    double x;
-    double y;
-    int type;
-};
+// MapData struct moved to common_types.h
 
-// 语义地图数据结构
-struct SemanticMapData {
-    std::vector<SemanticMapPoint> points;
-};
+// SemanticMap structures moved to common_types.h
 
-// Point和GlobalPlan结构已在ilqr.h中定义
+// Point and GlobalPlan forward declared or in common_types.h
 
 // 参数结构
 struct Params {
@@ -90,11 +82,12 @@ SemanticMapData load_semantic_map(const std::string& file_path);
 void fill_global_path_points(std::vector<std::vector<double>>& global_plan_log);
 void set_global_path(GlobalPlan& global_plan, const std::vector<std::vector<double>>& global_plan_log);
 
-// 规划包装器：默认启用RRT*，失败时快速回退到 load_map 生成的路径
+// 规划包装器：默认启用RRT*（实际为Hybrid A*），失败时快速回退到 load_map 生成的路径
 bool plan_global_path(const MapData& bitmap_map,
                       const Eigen::Vector3d& start,
                       const Eigen::Vector3d& goal,
                       GlobalPlan& out_plan,
+                      const HybridAStarParams& ha_params,
                       bool enable_rrt = true);
 
 // 基于 SystemModel 推导保守的最大曲率与最小转弯半径（给定机械关节角上限）
@@ -113,14 +106,7 @@ Trajectory predict_obstacle_trajectory(const State& initial_state, double dt, in
 
 
 // 占用栅格结构（用于快速碰撞检测）
-struct OccupancyGrid {
-    int width;
-    int height;
-    double resolution;
-    double origin_x; // 地图原点x（米）
-    double origin_y; // 地图原点y（米）
-    std::vector<uint8_t> cells; // 0=free, 1=occupied
-};
+// struct OccupancyGrid moved to common_types.h
 
 // 从 MapData 生成占用栅格，并按给定半径进行膨胀（米）
 OccupancyGrid make_occupancy_grid(const MapData& map, double elevation_threshold_ratio = 0.1, double inflate_radius_m = 0.5);

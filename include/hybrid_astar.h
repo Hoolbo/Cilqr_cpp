@@ -1,6 +1,7 @@
 #pragma once
 
 #include "utils.h"
+#include "common_types.h"
 #include <vector>
 #include <Eigen/Eigen>
 

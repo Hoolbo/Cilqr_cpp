@@ -1,6 +1,7 @@
 #ifndef ILQR_H
 #define ILQR_H
 
+#include "common_types.h"
 #include <Eigen/Dense>
 #include <vector>
 #include <iostream>
@@ -13,8 +14,6 @@
 
 using namespace Eigen;
 // #define M_PI 3.1415
-typedef Vector4d State;
-typedef Vector2d Control;
 
 struct Arg{
     // 仿真参数
@@ -96,20 +95,6 @@ struct Arg{
         R <<    1.0,    0,                  // 速度控制权重从0.1增加到1.0
                 0,    50;                  // 优化：铰接角速率权重从8大幅增加到50
     }
-};
-//路点结构体
-struct Point{
-    Point(double X,double Y,double Heading){
-        x = X;
-        y = Y;
-        heading = Heading;
-    }
-    bool operator==(const Point& other) const {
-        return (x == other.x && y == other.y && heading == other.heading);
-    }
-    double x;
-    double y;
-    double heading;
 };
 
 struct BarrieInfo{

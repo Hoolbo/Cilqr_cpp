@@ -1,0 +1,24 @@
+{
+    "run_config": {
+        "start_x": 70.0,
+        "start_y": 60.0,
+        "start_theta": 1.2,
+        "goal_x": 180.0,
+        "goal_y": 127.0,
+        "goal_theta": 1.8,
+        "ITER": 280,
+        "solver_type": "cilqr",
+        "selected_map": "B301"
+    },
+    "simulation": {
+        "tf": 1000.0,
+        "dt": 0.1
+    },
+    "vehicle": {
+        "ego_rad": 7.0,
+        "lf": 3.0,
+        "lr": 3.0,
+        "width": 3.0,
+        "box_length": 5.0
+    }
+}

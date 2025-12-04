@@ -1,0 +1,67 @@
+{
+    "cilqr": {
+        "N": 50,
+        "tol": 1.0,
+        "rel_tol": 1e-5,
+        "max_iter": 50,
+        "lamb_init": 7.0,
+        "lamb_factor": 2.0,
+        "lamb_max": 6000.0
+    },
+    "pure_pursuit": {
+        "kv": 0.3,
+        "kp": 0.8,
+        "ld0": 3.0,
+        "ld_min": 3.0,
+        "ld_max": 20.0
+    },
+    "cost_weights": {
+        "desire_speed": 15.0,
+        "desire_heading": 0.0,
+        "v_rate_weight": 5.0,
+        "ref_weight": 8.0,
+        "Q": [
+            0.2,
+            0.2,
+            0.1,
+            1.5
+        ],
+        "R": [
+            1.0,
+            50.0
+        ]
+    },
+    "constraints": {
+        "if_cal_obs_cost": true,
+        "if_cal_lane_cost": true,
+        "if_cal_speed_rate_cost": true,
+        "if_cal_gamma_barrier": true,
+        "if_cal_gamma_dot_barrier": true,
+        "gamma_max": 1.0,
+        "gamma_max_q1": 1.0,
+        "gamma_max_q2": 3.0,
+        "gamma_min": -1.0,
+        "gamma_min_q1": 1.0,
+        "gamma_min_q2": 3.0,
+        "gamma_dot_max": 0.3,
+        "gamma_dot_max_q1": 10.0,
+        "gamma_dot_max_q2": 2.0,
+        "gamma_dot_min": -0.3,
+        "gamma_dot_min_q1": 10.0,
+        "gamma_dot_min_q2": 2.0,
+        "acc_max": 3.0,
+        "acc_min": -4.0,
+        "acc_q1": 1.0,
+        "acc_q2": 2.0,
+        "trace_safe_width_left": 5.0,
+        "trace_safe_width_right": 5.0,
+        "lane_q1": 5.0,
+        "lane_q2": 3.0,
+        "obs_q1": 4.25,
+        "obs_q2": 3.4,
+        "obs_length": 5.0,
+        "obs_width": 3.0,
+        "safe_a_buffer": 0.5,
+        "safe_b_buffer": 0.5
+    }
+}

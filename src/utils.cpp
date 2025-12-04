@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "ilqr.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -1289,31 +1290,15 @@ bool plan_global_path(const MapData& bitmap_map,
                       const Eigen::Vector3d& start,
                       const Eigen::Vector3d& goal,
                       GlobalPlan& out_plan,
+                      const HybridAStarParams& ha_params_in,
                       bool enable_rrt) {
     std::vector<Point> points;
     if (enable_rrt) {
         // 使用混合A*替代RRT*作为全局规划器
-        HybridAStarParams hparams;
-        hparams.grid_resolution = std::max(0.05, bitmap_map.resolution);
-        hparams.inflation_radius = 2.0;
-        hparams.turning_radius = 5.0;
-        hparams.move_step = 0.5; // was 0.4, speed up progress per expansion
-        hparams.move_step_backwards = 0.4; // was 0.3, keep ratio similar
-        hparams.num_gamma_angles = 7; // was 5, finer angular options
-        hparams.heading_resolution = 5.0; // was default 10 deg, finer heading bins
-        hparams.allow_reverse = false; // enable reverse to escape local traps
-        hparams.steering_penalty = 0.4;     // 铰接角代价系数
-        hparams.direction_change_penalty = 3; // 换向惩罚
-        hparams.heuristic_weight = 2.0; // make search more goal-directed
-        hparams.max_iterations = 200000; // was 20000, allow more iterations if needed
-        hparams.num_nodes_to_keep = 60000; // was 30000, reduce pruning pressure
-        hparams.goal_tolerance_xy = 0.8;
-        hparams.goal_tolerance_heading = 15.0;
-        // 清距偏好（让路径更远离障碍物）
-        hparams.clearance_weight = 1;     // 清距代价权重（越大越偏好远离障碍）
-        hparams.desired_clearance = 3;    // 期望与障碍的最小距离（米），小于该值增加代价
-        hparams.max_clearance = 12.0;       // 清距归一化的上限（米），避免过大距离影响代价
-        hparams.min_rs_clearance = 3;     // RS解析路径的最小允许清距（米），低于则拒绝解析连接
+        HybridAStarParams hparams = ha_params_in;
+        // Ensure grid resolution is at least the map resolution
+        hparams.grid_resolution = std::max(hparams.grid_resolution, bitmap_map.resolution);
+        
         std::cout << "Attempting Hybrid A* planning..." << std::endl;
         if (hybrid_astar_plan(bitmap_map, start, goal, points, hparams)) {
             std::cout << "Hybrid A* planning succeeded! Raw path points: " << points.size() << std::endl;
