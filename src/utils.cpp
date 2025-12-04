@@ -1860,7 +1860,7 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
         data_file << "}\n";
         data_file.close();
         
-        std::cout << "Data saved to: " << data_filename << std::endl;
+        // std::cout << "Data saved to: " << data_filename << std::endl;
     } else {
         std::cout << "Error: Could not open file " << data_filename << " for writing" << std::endl;
     }
@@ -1941,4 +1941,124 @@ double compute_max_violation(const Solution& solution, Vehicle& ego, const std::
         cmax = std::max(cmax, c_umin);
     }
     return cmax;
+}
+
+
+
+std::vector<State> generate_obstacles(const GlobalPlan& global_plan, const OccupancyGrid& grid, int num_obstacles, double distance_from_path) {
+    std::vector<State> obstacles;
+    if (num_obstacles <= 0) return obstacles;
+    const auto& points = global_plan.get_points();
+    size_t M = points.size();
+    if (M < 10) return obstacles;
+
+    auto P = [&](size_t i){ return Eigen::Vector2d(points[i].x, points[i].y); };
+    auto Th = [&](size_t i){ return points[i].heading; };
+
+    // 1. Find max curvature point (Turn Apex)
+    size_t idx_turn = 0; 
+    double best_curv = 0.0;
+    for(size_t i=1; i+1<M; i++){
+        Eigen::Vector2d t0 = P(i) - P(i-1);
+        Eigen::Vector2d t1 = P(i+1) - P(i);
+        double a0 = std::atan2(t0.y(), t0.x());
+        double a1 = std::atan2(t1.y(), t1.x());
+        double d = std::atan2(std::sin(a1 - a0), std::cos(a1 - a0));
+        double c = std::abs(d);
+        if(c > best_curv){ best_curv = c; idx_turn = i; }
+    }
+
+    // Shift turn obstacle slightly after apex to avoid blocking steering
+    size_t idx_obs1 = std::min(M-1, idx_turn + 20); 
+
+    // 2. Find narrowest point (Bottleneck)
+    size_t idx_bottle = 0; 
+    double best_clear = 1e9;
+    for(size_t i=0; i<M; i++){
+        double clr = nearest_obstacle_distance_world(grid, P(i));
+        if(clr < best_clear){ best_clear = clr; idx_bottle = i; }
+    }
+
+    auto generate_one = [&](size_t idx, double offset_dist) -> State {
+        double th = Th(idx);
+        Eigen::Vector2d n(-std::sin(th), std::cos(th));
+        Eigen::Vector2d p = P(idx);
+        
+        // Check which side is closer to static obstacles (inner side)
+        double d_pos = nearest_obstacle_distance_world(grid, p + 0.5 * n);
+        double d_neg = nearest_obstacle_distance_world(grid, p - 0.5 * n);
+        
+        Eigen::Vector2d n_side = (d_pos < d_neg) ? n : -n;
+        
+        // Try placing at offset
+        Eigen::Vector2d p_obs = p + offset_dist * n_side;
+        
+        // Check if this position is valid (not inside static obstacle)
+        if (nearest_obstacle_distance_world(grid, p_obs) < 2.0) {
+            // If too close to wall, try the other side
+            n_side = -n_side;
+            p_obs = p + offset_dist * n_side;
+        }
+        
+        return State(p_obs.x(), p_obs.y(), th, 0.0);
+    };
+
+    // Add obstacles
+    if (num_obstacles >= 1) {
+        obstacles.push_back(generate_one(idx_obs1, distance_from_path));
+    }
+    if (num_obstacles >= 2) {
+        obstacles.push_back(generate_one(idx_bottle, distance_from_path));
+    }
+    
+    // If more obstacles needed, pick random points far from existing ones
+    if (num_obstacles > 2) {
+        std::mt19937 rng(42); // Fixed seed for reproducibility
+        std::uniform_int_distribution<size_t> dist(0, M-1);
+        int attempts = 0;
+        while (obstacles.size() < (size_t)num_obstacles && attempts < 100) {
+            size_t idx = dist(rng);
+            // Check distance to existing obstacles
+            bool too_close = false;
+            for (const auto& obs : obstacles) {
+                if (std::hypot(P(idx).x() - obs[0], P(idx).y() - obs[1]) < 20.0) {
+                    too_close = true;
+                    break;
+                }
+            }
+            if (!too_close) {
+                obstacles.push_back(generate_one(idx, distance_from_path));
+            }
+            attempts++;
+        }
+    }
+
+    return obstacles;
+}
+
+void ensure_directory_exists(const std::string& path) {
+#ifdef _WIN32
+    std::string temp = path;
+    std::replace(temp.begin(), temp.end(), '/', '\\');
+    
+    for (size_t i = 0; i < temp.length(); ++i) {
+        if (temp[i] == '\\') {
+            if (i == 0) continue;
+            char saved = temp[i];
+            temp[i] = '\0';
+            DWORD attr = GetFileAttributesA(temp.c_str());
+            if (attr == INVALID_FILE_ATTRIBUTES) {
+                CreateDirectoryA(temp.c_str(), NULL);
+            }
+            temp[i] = saved;
+        }
+    }
+    DWORD attr = GetFileAttributesA(temp.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        CreateDirectoryA(temp.c_str(), NULL);
+    }
+#else
+    std::string cmd = "mkdir -p \"" + path + "\"";
+    system(cmd.c_str());
+#endif
 }

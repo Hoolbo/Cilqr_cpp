@@ -162,9 +162,9 @@ DijkstraDistanceMap computeDijkstraDistances(const OccupancyGrid& grid,
         processed_nodes++;
         
         // 每处理1000个节点输出一次进度
-        if (processed_nodes % 10000 == 0) {
-            std::cout << "Dijkstra processed " << processed_nodes << " nodes" << std::endl;
-        }
+        // if (processed_nodes % 10000 == 0) {
+        //     std::cout << "Dijkstra processed " << processed_nodes << " nodes" << std::endl;
+        // }
         
         // 遍历8个邻居
         for (int i = 0; i < 8; ++i) {
@@ -567,7 +567,7 @@ bool hybrid_astar_plan(const MapData& map,
     std::shared_ptr<HybridAStarNode> analytic_start_node = nullptr;
 
     while (!open_list.empty() && iterations < params.max_iterations) {
-        std::cout << "Hybrid_a_star Iteration: " << iterations << std::endl;
+        // std::cout << "Hybrid_a_star Iteration: " << iterations << std::endl;
         // 获取f值最小的节点
         auto current = open_list.top();
         open_list.pop();
@@ -577,8 +577,8 @@ bool hybrid_astar_plan(const MapData& map,
         // 调试：当前节点信息和到目标的距离
         if (iterations % 100 == 0) {
             double d_goal_dbg = std::hypot(current->x - goal_x, current->y - goal_y);
-            std::cout << "Current node: x=" << current->x << ", y=" << current->y << ", th=" << current->theta
-                      << ", d_goal=" << d_goal_dbg << std::endl;
+            // std::cout << "Current node: x=" << current->x << ", y=" << current->y << ", th=" << current->theta
+            //           << ", d_goal=" << d_goal_dbg << std::endl;
         }
         // 尝试解析RS连接（仅在接近终点时）
         double d_goal = std::hypot(current->x - goal_x, current->y - goal_y);
@@ -587,7 +587,7 @@ bool hybrid_astar_plan(const MapData& map,
             if (tryRSConnect(*current, goal_x, goal_y, goal_theta, params, grid, rs_path)) {
                 // 解析路径的二次碰撞校验（保守）：逐段采样 + 走廊宽度自适应
                 if (!is_collision_free_polyline(grid, rs_path)) {
-                    std::cout << "Analytic RS path rejected due to collision along segments, size=" << rs_path.size() << std::endl;
+                    // std::cout << "Analytic RS path rejected due to collision along segments, size=" << rs_path.size() << std::endl;
                 } else {
                     analytic_success = true;
                     analytic_path = rs_path;
@@ -600,7 +600,7 @@ bool hybrid_astar_plan(const MapData& map,
                     }
                     if (!rs_clearance_ok) {
                         analytic_success = false;
-                        std::cout << "Analytic RS path rejected due to insufficient clearance (<" << params.min_rs_clearance << ")" << std::endl;
+                        // std::cout << "Analytic RS path rejected due to insufficient clearance (<" << params.min_rs_clearance << ")" << std::endl;
                     } else {
                         std::cout << "Analytic RS connect succeeded at iter " << iterations << ", path points: " << rs_path.size() << std::endl;
                         break;
@@ -624,7 +624,7 @@ bool hybrid_astar_plan(const MapData& map,
         // 调试：邻居统计
         if (iterations % 100 == 0) {
             int attempted = params.num_gamma_angles * (params.allow_reverse ? 2 : 1);
-            std::cout << "Neighbors attempted=" << attempted << ", accepted=" << neighbors.size() << std::endl;
+            // std::cout << "Neighbors attempted=" << attempted << ", accepted=" << neighbors.size() << std::endl;
         }
         // 处理每个邻居
         for (const auto& neighbor : neighbors) {

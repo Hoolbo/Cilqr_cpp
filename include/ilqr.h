@@ -21,7 +21,7 @@ struct Arg{
     double tf = 1000;
     double dt = 0.1;
     //CILQR参数
-    int N = 100; //Horizen
+    int N = 50; //Horizen
     double tol = 1;
     double rel_tol = 1e-5;
     int max_iter = 50;
@@ -38,9 +38,9 @@ struct Arg{
     double desire_speed = 15;
     double desire_heading = 0;
     bool if_cal_obs_cost = true;
-    bool if_cal_lane_cost = false;
+    bool if_cal_lane_cost = true;
     bool if_cal_speed_rate_cost = true;
-    double v_rate_weight = 0.8;           // 优化：从1.0降到0.8，改善速度平滑性
+    double v_rate_weight = 5.0;           // 优化：从1.0增加到5.0，大幅增加速度平滑性
     
     // 铰接角gamma约束参数
     bool if_cal_gamma_barrier = true;     // 对状态gamma施加上下限barrier
@@ -53,12 +53,18 @@ struct Arg{
     
     // 铰接角速度gamma_dot约束参数
     bool if_cal_gamma_dot_barrier = true; // 对控制gamma_dot施加上下限barrier
-    double gamma_dot_max = 0.8;           // 优化：从0.6增加到0.8，进一步放宽约束33%
-    double gamma_dot_max_q1 = 0.5;        // 优化：从1.0降到0.5，降低barrier权重50%
-    double gamma_dot_max_q2 = 2.0;        // 优化：从3.0降到2.0，降低barrier曲率33%
-    double gamma_dot_min = -0.8;          // 优化：从-0.6调整到-0.8，保持对称
-    double gamma_dot_min_q1 = 0.5;        // 优化：从1.0降到0.5，降低barrier权重50%
-    double gamma_dot_min_q2 = 2.0;        // 优化：从3.0降到2.0，降低barrier曲率33%
+    double gamma_dot_max = 0.3;           // 优化：从0.6降到0.3，大幅收紧约束以消除震荡
+    double gamma_dot_max_q1 = 10.0;       // 优化：从1.0增加到10.0，大幅增加barrier权重
+    double gamma_dot_max_q2 = 2.0;        // 优化：保持2.0
+    double gamma_dot_min = -0.3;          // 优化：从-0.6调整到-0.3
+    double gamma_dot_min_q1 = 10.0;       // 优化：从1.0增加到10.0
+    double gamma_dot_min_q2 = 2.0;        // 优化：保持2.0
+    
+    // 加速度约束 (v_k - v_{k-1})/dt
+    double acc_max = 3.0;                 // 最大加速度 m/s^2 (relaxed)
+    double acc_min = -4.0;                // 最小加速度 m/s^2 (relaxed)
+    double acc_q1 = 1.0;                  // 加速度barrier权重
+    double acc_q2 = 2.0;                  // 加速度barrier曲率
     
     //道路约束
     double trace_safe_width_left = 5;
@@ -66,7 +72,7 @@ struct Arg{
     double lane_q1 = 5;
     double lane_q2 = 3;
     //障碍约束
-    double obs_q1 = 20;                 // 优化：从5降到4.25，降低15%
+    double obs_q1 = 4.25;                 // 优化：从5降到4.25，降低15%
     double obs_q2 = 3.4;                  // 优化：从4降到3.4，降低15%
     // double obs_length = 2.7;
     // double obs_width = 2;
@@ -87,8 +93,8 @@ struct Arg{
              0, 0, 0.1, 0,                // 航向权重保持不变
              0, 0, 0, 1.5;                // 优化：铰接角权重从1增加到1.5，增加50%
 
-        R <<    0.1,    0,                  // 速度控制权重保持不变
-                0,    8;                  // 优化：铰接角控制权重从10降到8，降低20%
+        R <<    1.0,    0,                  // 速度控制权重从0.1增加到1.0
+                0,    50;                  // 优化：铰接角速率权重从8大幅增加到50
     }
 };
 //路点结构体
@@ -389,6 +395,8 @@ class ALILQRSolver{
         Vehicle ego;
         std::vector<Trajectory> obs_list;
         Arg arg;
+        
+        // iLQR matrices
         std::vector<MatrixXd> k;
         std::vector<MatrixXd> K;
         std::vector<MatrixXd> df_dx;
@@ -400,16 +408,33 @@ class ALILQRSolver{
         std::vector<MatrixXd> lux;
         std::vector<MatrixXd> Qu;
         std::vector<MatrixXd> Quu;
-        double rho = 50.0;
-        double rho_max = 1e8;
-        int max_outer = 20;
-        double constraint_tol = 1e-4;
-        std::vector<double> lambda_obs;
-        std::vector<double> lambda_lane;
+        
+        // ALTRO Parameters
+        int max_outer_iters = 20;
+        int max_inner_iters = 50;
+        double constraint_tol = 1e-3;
+        double penalty_scaling = 10.0;
+        double penalty_max = 1e8;
+        
+        // Constraint Data (Multipliers and Penalties)
+        // State constraints (N+1 steps)
         std::vector<double> lambda_gamma_max;
+        std::vector<double> mu_gamma_max;
         std::vector<double> lambda_gamma_min;
+        std::vector<double> mu_gamma_min;
+        
+        std::vector<double> lambda_obs;
+        std::vector<double> mu_obs;
+        
+        std::vector<double> lambda_lane;
+        std::vector<double> mu_lane;
+        
+        // Control constraints (N steps)
         std::vector<double> lambda_gdot_max;
+        std::vector<double> mu_gdot_max;
         std::vector<double> lambda_gdot_min;
+        std::vector<double> mu_gdot_min;
+
         Control pure_pursuit(const State& X_cur);
         Solution get_nominal_solution(const State& init_state);
         double cal_cost(const Solution& solution);
@@ -418,13 +443,23 @@ class ALILQRSolver{
         void compute_al_derivatives(const Solution& solution);
         void backward();
         Solution forward(const Solution& solution);
-        double compute_max_constraint_violation(const Solution& solution);
+        
+        // ALTRO Helpers
+        void update_constraints(const Solution& solution);
+        double max_constraint_violation(const Solution& solution);
+        void initialize_penalties();
+        void shift_penalties();
+
     public:
         ALILQRSolver(const Vehicle& ego, const std::vector<Trajectory>& obs_list, const Arg& arg)
         : ego(ego), obs_list(obs_list), arg(arg), lamb(arg.lamb_init),
         k(arg.N), K(arg.N), df_dx(arg.N), df_du(arg.N), lx(arg.N+1), lu(arg.N), lxx(arg.N+1), luu(arg.N), lux(arg.N), Qu(arg.N), Quu(arg.N),
-        lambda_obs(arg.N+1, 0.0), lambda_lane(arg.N+1, 0.0), lambda_gamma_max(arg.N+1, 0.0), lambda_gamma_min(arg.N+1, 0.0),
-        lambda_gdot_max(arg.N, 0.0), lambda_gdot_min(arg.N, 0.0)
+        lambda_gamma_max(arg.N+1, 0.0), mu_gamma_max(arg.N+1, 1.0),
+        lambda_gamma_min(arg.N+1, 0.0), mu_gamma_min(arg.N+1, 1.0),
+        lambda_obs(arg.N+1, 0.0), mu_obs(arg.N+1, 1.0),
+        lambda_lane(arg.N+1, 0.0), mu_lane(arg.N+1, 1.0),
+        lambda_gdot_max(arg.N, 0.0), mu_gdot_max(arg.N, 1.0),
+        lambda_gdot_min(arg.N, 0.0), mu_gdot_min(arg.N, 1.0)
         {
             for(int i = 0; i < arg.N; ++i) {
                 k[i] = MatrixXd::Zero(2,1);

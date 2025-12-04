@@ -46,7 +46,7 @@ void LocalPlan::set_plan(const GlobalPlan& global_plan,const State& vehicle_stat
     while(this->points.size() < num_points_to_extract){
          this->points.push_back(this->points.back());
     }
-    std::cout << "LocalPlan points.size():" << this->points.size() << std::endl;
+    // std::cout << "LocalPlan points.size():" << this->points.size() << std::endl;
 }
 
 BarrieInfo barrierFunction(double q1,double q2,double c,VectorXd dc){
@@ -915,14 +915,49 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
         X_tmp = X;
         delta_V = 0;  // 重置预期代价变化
 
+        double crash_penalty = 0.0;
+
         // 应用控制修正
         for (int i = 0; i < arg.N; ++i) {
             // 计算状态偏差
             delta_x = X_tmp[i] - cur_solution.ego_trj.get_states()[i];
             // 应用控制修正：u_new = u_old + alpha*k + K*delta_x
             U_tmp[i] += alpha * k[i]+ K[i] * delta_x;
+            
+            // Clamp controls to physical limits first
+            U_tmp[i][0] = std::clamp(U_tmp[i][0], -5.0, 30.0);  // Velocity limit
+            U_tmp[i][1] = std::clamp(U_tmp[i][1], -1.5, 1.5);   // Steering rate limit
+            
+            // Clamp acceleration (rate of change of velocity)
+            // Ensure prev_v is within limits to avoid "sticking" to bad values
+            double raw_prev_v = (i == 0) ? cur_solution.control_sequence.get_control_sequence()[0][0] : U_tmp[i-1][0];
+            double prev_v = std::clamp(raw_prev_v, -5.0, 30.0);
+            
+            double v_curr = U_tmp[i][0];
+            double max_v = prev_v + arg.acc_max * arg.dt;
+            double min_v = prev_v + arg.acc_min * arg.dt;
+            
+            // Intersect acceleration limits with absolute limits
+            max_v = std::min(max_v, 30.0);
+            min_v = std::max(min_v, -5.0);
+            
+            U_tmp[i][0] = std::clamp(v_curr, min_v, max_v);
+
             // 前向模拟
             X_tmp[i+1] = ego.get_model().dynamics(X_tmp[i], U_tmp[i]);
+            
+            // Sanity check: if state explodes, add huge penalty but don't abort immediately
+            // This allows the solver to find a gradient to recover from the crash
+            if (std::abs(X_tmp[i+1][3]) > 2.0) {
+                 crash_penalty += 1e6 * (std::abs(X_tmp[i+1][3]) - 2.0);
+            }
+            if (std::abs(U_tmp[i][0]) > 40.0) {
+                 crash_penalty += 1e6 * (std::abs(U_tmp[i][0]) - 40.0);
+            }
+            if (std::abs(X_tmp[i+1][0]) > 20000.0) {
+                 crash_penalty += 1e6;
+            }
+
             //累计deltaV
             delta_V += alpha * (k[i].transpose() * Qu[i]).value() + alpha * alpha * 0.5 * (k[i].transpose() * Quu[i] * k[i]).value(); 
             average_gradient += k[i].maxCoeff() / (U_tmp[i].norm() + 1);
@@ -932,6 +967,8 @@ Solution CILQRSolver::forward(const Solution& cur_solution){
         new_solution.ego_trj.states.swap(X_tmp);
         new_solution.control_sequence.controls.swap(U_tmp);
         J_new = cal_cost_with_logging(new_solution, -2);  // -2 表示line search内部迭代
+        J_new += crash_penalty;
+
         
         delta_cost = J_new - J_old;
         
@@ -1113,7 +1150,14 @@ void CILQRSolver::init_cost_logging() {
     
     std::ostringstream oss;
     oss << "cost_analysis_" << std::put_time(&tm, "%Y%m%d_%H%M%S") << ".csv";
-    log_filename = oss.str();
+    std::string filename = oss.str();
+    
+    // Ensure output directory exists
+    std::string relative_dir = "outputs/logs";
+    std::string full_dir_path = resolve_resource_path(relative_dir);
+    
+    ensure_directory_exists(full_dir_path);
+    log_filename = full_dir_path + "/" + filename;
     
     cost_log_file.open(log_filename);
     if (cost_log_file.is_open()) {
@@ -1153,107 +1197,235 @@ void CILQRSolver::close_cost_logging() {
     }
 }
 
+void ALILQRSolver::initialize_penalties() {
+    // Initialize penalties with default values
+    std::fill(mu_gamma_max.begin(), mu_gamma_max.end(), 10.0);
+    std::fill(mu_gamma_min.begin(), mu_gamma_min.end(), 10.0);
+    std::fill(mu_obs.begin(), mu_obs.end(), 10.0);
+    std::fill(mu_lane.begin(), mu_lane.end(), 10.0);
+    std::fill(mu_gdot_max.begin(), mu_gdot_max.end(), 10.0);
+    std::fill(mu_gdot_min.begin(), mu_gdot_min.end(), 10.0);
+    
+    // Initialize multipliers to zero
+    std::fill(lambda_gamma_max.begin(), lambda_gamma_max.end(), 0.0);
+    std::fill(lambda_gamma_min.begin(), lambda_gamma_min.end(), 0.0);
+    std::fill(lambda_obs.begin(), lambda_obs.end(), 0.0);
+    std::fill(lambda_lane.begin(), lambda_lane.end(), 0.0);
+    std::fill(lambda_gdot_max.begin(), lambda_gdot_max.end(), 0.0);
+    std::fill(lambda_gdot_min.begin(), lambda_gdot_min.end(), 0.0);
+}
+
+void ALILQRSolver::shift_penalties() {
+    // Shift state constraint multipliers (size N+1)
+    // lambda[i] = lambda[i+1] for i=0..N-1
+    // lambda[N] = lambda[N] (duplicate last)
+    for (int i = 0; i < arg.N; ++i) {
+        lambda_gamma_max[i] = lambda_gamma_max[i+1];
+        mu_gamma_max[i] = mu_gamma_max[i+1];
+        
+        lambda_gamma_min[i] = lambda_gamma_min[i+1];
+        mu_gamma_min[i] = mu_gamma_min[i+1];
+        
+        lambda_obs[i] = lambda_obs[i+1];
+        mu_obs[i] = mu_obs[i+1];
+        
+        lambda_lane[i] = lambda_lane[i+1];
+        mu_lane[i] = mu_lane[i+1];
+    }
+    // Duplicate last element for state constraints
+    // (Already holds value from previous step's N, which is fine as a guess)
+    
+    // Shift control constraint multipliers (size N)
+    // lambda[i] = lambda[i+1] for i=0..N-2
+    // lambda[N-1] = lambda[N-1] (duplicate last)
+    for (int i = 0; i < arg.N - 1; ++i) {
+        lambda_gdot_max[i] = lambda_gdot_max[i+1];
+        mu_gdot_max[i] = mu_gdot_max[i+1];
+        
+        lambda_gdot_min[i] = lambda_gdot_min[i+1];
+        mu_gdot_min[i] = mu_gdot_min[i+1];
+    }
+}
+
 Solution ALILQRSolver::solve(const State& init_state,const std::vector<Trajectory>& obs_list) {
     ego.set_state(init_state);
     this->obs_list = obs_list;
     ego.set_local_plan();
+    
+    // Initialize solution
     Solution nominal_solution = get_nominal_solution(init_state);
     Solution current_solution = nominal_solution;
     Solution new_solution;
-    lamb = arg.lamb_init;
+    
+    if (this->pre_solution.control_sequence.size() > 0) {
+        shift_penalties();
+    } else {
+        initialize_penalties();
+    }
     converged = false;
-    int outer_iters = 0;
-    double prev_cmax = 1e9;
-    for(int outer = 0; outer < max_outer; ++outer){
-        outer_iters = outer + 1;
-        double J_old = cal_cost_with_logging(current_solution, 1000 + outer);
-        for (int iter = 0; iter < arg.max_iter; ++iter) {
+    
+    for(int outer = 0; outer < max_outer_iters; ++outer){
+        // Inner iLQR Loop
+        double J_old = cal_cost(current_solution); // Augmented Lagrangian Cost
+        
+        for (int inner = 0; inner < max_inner_iters; ++inner) {
             compute_df(current_solution);
             compute_al_derivatives(current_solution);
             backward();
             new_solution = forward(current_solution);
-            double J_new = cal_cost_with_logging(new_solution, 1000 + outer);
-            double rel_improve = (J_old - J_new) / std::max(1e-12, J_old);
-            if(abs(average_gradient)<1e-3){
+            
+            double J_new = cal_cost(new_solution);
+            
+            if (std::abs(J_old - J_new) < arg.tol) {
                 current_solution = new_solution;
-                converged = true;
                 break;
             }
-            if (J_new < J_old) {
-                lamb = std::max(lamb * 0.7 ,1e-3);
-                current_solution = new_solution;
-                if (J_old - J_new < arg.tol) break;
-                J_old = J_new;
-            } else {
-                lamb = lamb * 2;
-                if (lamb > arg.lamb_max) break;
-            }
+            current_solution = new_solution;
+            J_old = J_new;
         }
-        double cmax = compute_max_constraint_violation(current_solution);
-        if(cmax <= constraint_tol){
+        
+        // Check constraint violation
+        double max_violation = max_constraint_violation(current_solution);
+        std::cout << "Outer Iter " << outer << ": Max Violation = " << max_violation << std::endl;
+        
+        if (max_violation < constraint_tol) {
             converged = true;
             break;
         }
-        for (int i = 0; i <= arg.N; ++i) {
-            double c_obs_i = 0.0;
-            if (arg.if_cal_obs_cost) {
-                if (i <= arg.N) {
-                    const State& X = current_solution.ego_trj.get_states()[i];
-                    for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
-                        const Trajectory& obs = obs_list[obs_idx];
-                        if (i >= obs.get_states().size()) continue;
-                        const State& obs_state = obs.get_states()[i];
-                        double dx = X[0] - obs_state[0];
-                        double dy = X[1] - obs_state[1];
-                        double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-                        double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-                        Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
-                        Vector2d dX_obs(dx, dy);
-                        Vector2d dX_obs_cord = R * dX_obs;
-                        double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-                        c_obs_i += std::max(0.0, c);
-                    }
-                }
+        
+        // Update AL parameters
+        update_constraints(current_solution);
+    }
+    
+    this->pre_solution = current_solution;
+    return current_solution;
+}
+
+void ALILQRSolver::update_constraints(const Solution& solution) {
+    const auto& X_traj = solution.ego_trj.get_states();
+    const auto& U_seq = solution.control_sequence.get_control_sequence();
+    
+    for (int i = 0; i <= arg.N; ++i) {
+        // State Constraints
+        const State& X = X_traj[i];
+        
+        // Gamma Max: gamma <= gamma_max  =>  gamma - gamma_max <= 0
+        double c_gmax = X[3] - arg.gamma_max;
+        lambda_gamma_max[i] = std::max(0.0, lambda_gamma_max[i] + mu_gamma_max[i] * c_gmax);
+        if (c_gmax > constraint_tol) mu_gamma_max[i] = std::min(penalty_max, mu_gamma_max[i] * penalty_scaling);
+        
+        // Gamma Min: gamma >= gamma_min  =>  gamma_min - gamma <= 0
+        double c_gmin = arg.gamma_min - X[3];
+        lambda_gamma_min[i] = std::max(0.0, lambda_gamma_min[i] + mu_gamma_min[i] * c_gmin);
+        if (c_gmin > constraint_tol) mu_gamma_min[i] = std::min(penalty_max, mu_gamma_min[i] * penalty_scaling);
+        
+        // Obstacles
+        if (arg.if_cal_obs_cost) {
+            double max_c_obs = -1e9;
+            for (const auto& obs : obs_list) {
+                if (i >= obs.get_states().size()) continue;
+                const State& obs_state = obs.get_states()[i];
+                double dx = X[0] - obs_state[0];
+                double dy = X[1] - obs_state[1];
+                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
+                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
+                Vector2d dX_obs(dx, dy);
+                Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
+                Vector2d dX_obs_cord = R * dX_obs;
+                // Constraint: 1 - (x/a)^2 - (y/b)^2 <= 0 (inside ellipse is violation)
+                // Wait, standard form is c(x) <= 0.
+                // Inside ellipse: (x/a)^2 + (y/b)^2 <= 1.
+                // We want OUTSIDE: (x/a)^2 + (y/b)^2 >= 1  =>  1 - (x/a)^2 - (y/b)^2 <= 0.
+                double c = 1.0 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                max_c_obs = std::max(max_c_obs, c);
             }
-            double c_lane_i = 0.0;
-            if (arg.if_cal_lane_cost) {
-                const auto& local_plan = ego.get_local_plan().get_points();
-                const State& X = current_solution.ego_trj.get_states()[i];
-                size_t index = find_closest_point(local_plan, X);
-                size_t match_index = index == local_plan.size() - 1 ? index : index + 1;
-                const Point& X_r_point = local_plan[match_index];
-                State X_r; X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
-                State X_e = X - X_r;
-                Vector2d dX(X_e[0], X_e[1]);
-                Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
-                double l = dX.dot(nor_r);
-                double c_left = std::max(0.0, l - arg.trace_safe_width_left);
-                double c_right = std::max(0.0, -l - arg.trace_safe_width_right);
-                c_lane_i = c_left + c_right;
+            // Only update based on the worst violation (Max-Constraint approach)
+            if (max_c_obs > -1e8) {
+                lambda_obs[i] = std::max(0.0, lambda_obs[i] + mu_obs[i] * max_c_obs);
+                if (max_c_obs > constraint_tol) mu_obs[i] = std::min(penalty_max, mu_obs[i] * penalty_scaling);
             }
-            double gamma = current_solution.ego_trj.get_states()[i][3];
-            double c_gmax = std::max(0.0, gamma - arg.gamma_max);
-            double c_gmin = std::max(0.0, arg.gamma_min - gamma);
-            lambda_obs[i] = std::max(0.0, lambda_obs[i] + rho * c_obs_i);
-            lambda_lane[i] = std::max(0.0, lambda_lane[i] + rho * c_lane_i);
-            lambda_gamma_max[i] = std::max(0.0, lambda_gamma_max[i] + rho * c_gmax);
-            lambda_gamma_min[i] = std::max(0.0, lambda_gamma_min[i] + rho * c_gmin);
         }
-        for (int i = 0; i < arg.N; ++i) {
-            const Control& U = current_solution.control_sequence.get_control_sequence()[i];
-            double c_umax = std::max(0.0, U[1] - arg.gamma_dot_max);
-            double c_umin = std::max(0.0, arg.gamma_dot_min - U[1]);
-            lambda_gdot_max[i] = std::max(0.0, lambda_gdot_max[i] + rho * c_umax);
-            lambda_gdot_min[i] = std::max(0.0, lambda_gdot_min[i] + rho * c_umin);
-        }
-        if (cmax > constraint_tol) {
-            if (cmax >= 0.9 * prev_cmax) {
-                rho = std::min(rho_max, rho * 20.0);
-            }
-            prev_cmax = cmax;
+        
+        // Lane
+        if (arg.if_cal_lane_cost) {
+            const auto& local_plan = ego.get_local_plan().get_points();
+            size_t index = find_closest_point(local_plan, X);
+            size_t match_index = index == local_plan.size() - 1 ? index : index + 1;
+            const Point& X_r_point = local_plan[match_index];
+            Vector2d dX(X[0] - X_r_point.x, X[1] - X_r_point.y);
+            Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+            double l = dX.dot(nor_r);
+            
+            double c_left = l - arg.trace_safe_width_left;
+            double c_right = -l - arg.trace_safe_width_right;
+            double max_c_lane = std::max(c_left, c_right);
+            
+            lambda_lane[i] = std::max(0.0, lambda_lane[i] + mu_lane[i] * max_c_lane);
+            if (max_c_lane > constraint_tol) mu_lane[i] = std::min(penalty_max, mu_lane[i] * penalty_scaling);
         }
     }
-    return current_solution;
+    
+    for (int i = 0; i < arg.N; ++i) {
+        const Control& U = U_seq[i];
+        
+        // Gamma Dot Max
+        double c_umax = U[1] - arg.gamma_dot_max;
+        lambda_gdot_max[i] = std::max(0.0, lambda_gdot_max[i] + mu_gdot_max[i] * c_umax);
+        if (c_umax > constraint_tol) mu_gdot_max[i] = std::min(penalty_max, mu_gdot_max[i] * penalty_scaling);
+        
+        // Gamma Dot Min
+        double c_umin = arg.gamma_dot_min - U[1];
+        lambda_gdot_min[i] = std::max(0.0, lambda_gdot_min[i] + mu_gdot_min[i] * c_umin);
+        if (c_umin > constraint_tol) mu_gdot_min[i] = std::min(penalty_max, mu_gdot_min[i] * penalty_scaling);
+    }
+}
+
+double ALILQRSolver::max_constraint_violation(const Solution& solution) {
+    const auto& X_traj = solution.ego_trj.get_states();
+    const auto& U_seq = solution.control_sequence.get_control_sequence();
+    double max_viol = 0.0;
+    
+    for (int i = 0; i <= arg.N; ++i) {
+        const State& X = X_traj[i];
+        max_viol = std::max(max_viol, X[3] - arg.gamma_max);
+        max_viol = std::max(max_viol, arg.gamma_min - X[3]);
+        
+        if (arg.if_cal_obs_cost) {
+            for (const auto& obs : obs_list) {
+                if (i >= obs.get_states().size()) continue;
+                const State& obs_state = obs.get_states()[i];
+                double dx = X[0] - obs_state[0];
+                double dy = X[1] - obs_state[1];
+                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
+                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
+                Vector2d dX_obs(dx, dy);
+                Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
+                Vector2d dX_obs_cord = R * dX_obs;
+                double c = 1.0 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                max_viol = std::max(max_viol, c);
+            }
+        }
+        
+        if (arg.if_cal_lane_cost) {
+            const auto& local_plan = ego.get_local_plan().get_points();
+            size_t index = find_closest_point(local_plan, X);
+            size_t match_index = index == local_plan.size() - 1 ? index : index + 1;
+            const Point& X_r_point = local_plan[match_index];
+            Vector2d dX(X[0] - X_r_point.x, X[1] - X_r_point.y);
+            Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+            double l = dX.dot(nor_r);
+            max_viol = std::max(max_viol, l - arg.trace_safe_width_left);
+            max_viol = std::max(max_viol, -l - arg.trace_safe_width_right);
+        }
+    }
+    
+    for (int i = 0; i < arg.N; ++i) {
+        const Control& U = U_seq[i];
+        max_viol = std::max(max_viol, U[1] - arg.gamma_dot_max);
+        max_viol = std::max(max_viol, arg.gamma_dot_min - U[1]);
+    }
+    
+    return max_viol;
 }
 
 void ALILQRSolver::compute_al_derivatives(const Solution& solution) {
@@ -1262,9 +1434,11 @@ void ALILQRSolver::compute_al_derivatives(const Solution& solution) {
     const auto& local_plan = ego.get_local_plan().get_points();
     const int N = arg.N;
     Vector2d P2(0, 1);
+    
     int chunks = 4;
     int chunk_size = (N + 1 + chunks - 1) / chunks;
     std::vector<std::future<void>> tasks;
+    
     for(int c=0;c<chunks;c++){
         int start = c * chunk_size;
         int end = std::min(N + 1, (c + 1) * chunk_size);
@@ -1276,8 +1450,11 @@ void ALILQRSolver::compute_al_derivatives(const Solution& solution) {
                 const Point& X_r_point = local_plan[match_index];
                 State X_r; X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
                 State X_e = X - X_r;
+                
+                // Original Cost Derivatives
                 Vector4d l_dx = 2 * arg.Q * X_e;
                 Matrix4d l_ddx = 2 * arg.Q;
+                
                 Vector2d dX(X_e[0], X_e[1]);
                 Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
                 Vector4d l_dx_ref(-2*dX.dot(nor_r)*std::sin(X_r_point.heading), 2*dX.dot(nor_r)*std::cos(X_r_point.heading), 0, 0);
@@ -1288,9 +1465,24 @@ void ALILQRSolver::compute_al_derivatives(const Solution& solution) {
                             0, 0, 0, 0;
                 l_dx_ref *= arg.ref_weight;
                 l_ddx_ref *= arg.ref_weight;
+                
+                // Augmented Lagrangian Derivatives
                 Vector4d grad_obs = Vector4d::Zero();
                 Matrix4d hess_obs = Matrix4d::Zero();
+                
                 if (arg.if_cal_obs_cost) {
+                    // Find max violation obstacle (Max-Constraint)
+                    // Or sum them up? ALTRO paper suggests handling constraints individually or max.
+                    // For now, let's sum them up as separate constraints, but we only have one lambda/mu per step for "obs".
+                    // Wait, if we have one lambda/mu per step, we should treat "obstacle collision" as a single constraint c(x) <= 0?
+                    // Usually c(x) = max(c_i(x)).
+                    // Let's use the max violation obstacle for the gradient/hessian at this step.
+                    
+                    double max_c = -1e9;
+                    int max_idx = -1;
+                    Vector4d max_c_dot = Vector4d::Zero();
+                    Matrix4d max_c_ddot = Matrix4d::Zero();
+                    
                     for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
                         const Trajectory& obs = obs_list[obs_idx];
                         if (i >= obs.get_states().size()) continue;
@@ -1302,54 +1494,113 @@ void ALILQRSolver::compute_al_derivatives(const Solution& solution) {
                         Vector2d dX_obs(dx, dy);
                         Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
                         Vector2d dX_obs_cord = R * dX_obs;
-                        double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-                        Vector2d grad_local(-2 * dX_obs_cord[0] / (a*a), -2 * dX_obs_cord[1] / (b*b));
-                        Vector2d grad_global = R.transpose() * grad_local;
-                        Vector4d c_dot; c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
-                        double s = std::max(0.0, c);
-                        double w = lambda_obs[i] + rho * s;
-                        grad_obs += w * c_dot;
-                        hess_obs += rho * c_dot * c_dot.transpose();
+                        double c = 1.0 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                        
+                        if (c > max_c) {
+                            max_c = c;
+                            max_idx = obs_idx;
+                            Vector2d grad_local(-2 * dX_obs_cord[0] / (a*a), -2 * dX_obs_cord[1] / (b*b));
+                            Vector2d grad_global = R.transpose() * grad_local;
+                            max_c_dot << grad_global[0], grad_global[1], 0.0, 0.0;
+                            // Hessian approximation (ignoring curvature of c for now or simple approx)
+                            // c = 1 - x'Mx. grad = -2Mx. hess = -2M.
+                            Matrix2d M; M << 1.0/(a*a), 0, 0, 1.0/(b*b);
+                            Matrix2d hess_global = R.transpose() * (-2.0 * M) * R;
+                            max_c_ddot.block<2,2>(0,0) = hess_global;
+                        }
+                    }
+                    
+                    if (max_idx != -1) {
+                        // PHR Penalty: P(c) = lambda*c + 0.5*mu*c^2 if lambda + mu*c > 0
+                        // Gradient: (lambda + mu*c) * grad_c
+                        // Hessian: (lambda + mu*c) * hess_c + mu * grad_c * grad_c'
+                        double val = lambda_obs[i] + mu_obs[i] * max_c;
+                        if (val > 0) {
+                            grad_obs += val * max_c_dot;
+                            hess_obs += val * max_c_ddot + mu_obs[i] * max_c_dot * max_c_dot.transpose();
+                        }
                     }
                 }
+                
                 Vector4d grad_lane = Vector4d::Zero();
                 Matrix4d hess_lane = Matrix4d::Zero();
                 if (arg.if_cal_lane_cost) {
                     double l = dX.dot(nor_r);
                     Vector4d dc; dc << -std::sin(X_r_point.heading), std::cos(X_r_point.heading), 0, 0;
-                    double s_left = std::max(0.0, l - arg.trace_safe_width_left);
-                    double s_right = std::max(0.0, -l - arg.trace_safe_width_right);
-                    double w_left = lambda_lane[i] + rho * s_left;
-                    double w_right = lambda_lane[i] + rho * s_right;
-                    grad_lane += w_left * dc + w_right * (-dc);
-                    hess_lane += rho * (dc * dc.transpose() + (-dc) * (-dc).transpose());
+                    
+                    // Max constraint between left and right
+                    double c_left = l - arg.trace_safe_width_left;
+                    double c_right = -l - arg.trace_safe_width_right;
+                    
+                    double c_lane = (c_left > c_right) ? c_left : c_right;
+                    Vector4d dc_lane = (c_left > c_right) ? dc : -dc;
+                    
+                    double val = lambda_lane[i] + mu_lane[i] * c_lane;
+                    if (val > 0) {
+                        grad_lane += val * dc_lane;
+                        hess_lane += mu_lane[i] * dc_lane * dc_lane.transpose();
+                    }
                 }
+                
                 double gamma = X[3];
                 Vector4d e4; e4 << 0,0,0,1;
-                double s_gmax = std::max(0.0, gamma - arg.gamma_max);
-                double s_gmin = std::max(0.0, arg.gamma_min - gamma);
-                Vector4d grad_gamma = (lambda_gamma_max[i] + rho * s_gmax) * e4 + (lambda_gamma_min[i] + rho * s_gmin) * (-e4);
-                Matrix4d hess_gamma = rho * (e4 * e4.transpose() + (-e4) * (-e4).transpose());
+                
+                // Gamma Max
+                double c_gmax = gamma - arg.gamma_max;
+                double val_gmax = lambda_gamma_max[i] + mu_gamma_max[i] * c_gmax;
+                Vector4d grad_gamma = Vector4d::Zero();
+                Matrix4d hess_gamma = Matrix4d::Zero();
+                if (val_gmax > 0) {
+                    grad_gamma += val_gmax * e4;
+                    hess_gamma += mu_gamma_max[i] * e4 * e4.transpose();
+                }
+                
+                // Gamma Min
+                double c_gmin = arg.gamma_min - gamma;
+                double val_gmin = lambda_gamma_min[i] + mu_gamma_min[i] * c_gmin;
+                if (val_gmin > 0) {
+                    grad_gamma += val_gmin * (-e4);
+                    hess_gamma += mu_gamma_min[i] * (-e4) * (-e4).transpose();
+                }
+                
                 lx[i] = l_dx + l_dx_ref + grad_obs + grad_lane + grad_gamma;
                 lxx[i] = l_ddx + l_ddx_ref + hess_obs + hess_lane + hess_gamma;
             }
         }));
     }
     for(auto& t:tasks) t.get();
+    
     for (int i = 0; i < N; ++i) {
         const Vector2d u = U[i];
         const Vector2d u_r(arg.desire_speed, 0);
         const Vector2d u_e = u - u_r;
         Vector2d lu_base = 2 * arg.R * u_e;
         Matrix2d luu_base = 2 * arg.R;
-        double s_umax = std::max(0.0, u.dot(P2) - arg.gamma_dot_max);
-        double s_umin = std::max(0.0, arg.gamma_dot_min - u.dot(P2));
-        Vector2d db = (lambda_gdot_max[i] + rho * s_umax) * P2 + (lambda_gdot_min[i] + rho * s_umin) * (-P2);
-        Matrix2d ddb = rho * (P2 * P2.transpose() + (-P2) * (-P2).transpose());
+        
+        Vector2d db = Vector2d::Zero();
+        Matrix2d ddb = Matrix2d::Zero();
+        
+        // Gamma Dot Max
+        double c_umax = u.dot(P2) - arg.gamma_dot_max;
+        double val_umax = lambda_gdot_max[i] + mu_gdot_max[i] * c_umax;
+        if (val_umax > 0) {
+            db += val_umax * P2;
+            ddb += mu_gdot_max[i] * P2 * P2.transpose();
+        }
+        
+        // Gamma Dot Min
+        double c_umin = arg.gamma_dot_min - u.dot(P2);
+        double val_umin = lambda_gdot_min[i] + mu_gdot_min[i] * c_umin;
+        if (val_umin > 0) {
+            db += val_umin * (-P2);
+            ddb += mu_gdot_min[i] * (-P2) * (-P2).transpose();
+        }
+        
         lu[i] = lu_base + db;
         luu[i] = luu_base + ddb;
         lux[i] = Matrix<double,2,4>::Zero();
     }
+    
     if (arg.if_cal_speed_rate_cost) {
         for (int i = 0; i < N; ++i) {
             Vector2d lu_speed_rate = Vector2d::Zero();
@@ -1374,54 +1625,7 @@ void ALILQRSolver::compute_al_derivatives(const Solution& solution) {
     }
 }
 
-double ALILQRSolver::compute_max_constraint_violation(const Solution& solution){
-    const auto& X_traj = solution.ego_trj.get_states();
-    const auto& U = solution.control_sequence.get_control_sequence();
-    double cmax = 0.0;
-    for (int i = 0; i <= arg.N; ++i) {
-        const State& X = X_traj[i];
-        double gamma = X[3];
-        cmax = std::max(cmax, std::max(0.0, gamma - arg.gamma_max));
-        cmax = std::max(cmax, std::max(0.0, arg.gamma_min - gamma));
-        if (arg.if_cal_lane_cost) {
-            const auto& local_plan = ego.get_local_plan().get_points();
-            size_t index = find_closest_point(local_plan, X);
-            size_t match_index = index == local_plan.size() - 1 ? index : index + 1;
-            const Point& X_r_point = local_plan[match_index];
-            State X_r; X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
-            State X_e = X - X_r;
-            Vector2d dX(X_e[0], X_e[1]);
-            Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
-            double l = dX.dot(nor_r);
-            cmax = std::max(cmax, std::max(0.0, l - arg.trace_safe_width_left));
-            cmax = std::max(cmax, std::max(0.0, -l - arg.trace_safe_width_right));
-        }
-        if (arg.if_cal_obs_cost) {
-            for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
-                const Trajectory& obs = obs_list[obs_idx];
-                if (i >= obs.get_states().size()) continue;
-                const State& obs_state = obs.get_states()[i];
-                double dx = X[0] - obs_state[0];
-                double dy = X[1] - obs_state[1];
-                double a = arg.obs_length/2 + ego.get_model().ego_rad/2 + arg.safe_a_buffer;
-                double b = arg.obs_width/2 + ego.get_model().ego_rad/2 + arg.safe_b_buffer;
-                Vector2d dX_obs(dx, dy);
-                Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
-                Vector2d dX_obs_cord = R * dX_obs;
-                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-                cmax = std::max(cmax, std::max(0.0, c));
-            }
-        }
-    }
-    for (int i = 0; i < arg.N; ++i) {
-        const Vector2d u = U[i];
-        double c_umax = std::max(0.0, u[1] - arg.gamma_dot_max);
-        double c_umin = std::max(0.0, arg.gamma_dot_min - u[1]);
-        cmax = std::max(cmax, c_umax);
-        cmax = std::max(cmax, c_umin);
-    }
-    return cmax;
-}
+
 
 Solution ALILQRSolver::get_nominal_solution(const State& init_state){
     Trajectory nominal_trj;
@@ -1430,15 +1634,38 @@ Solution ALILQRSolver::get_nominal_solution(const State& init_state){
     nominal_ctrl_sequence.controls.reserve(arg.N);
     State X0 = init_state;
     nominal_trj.push_back(X0);
-    for (int i=0;i<arg.N;i++){
-        Control U = pure_pursuit(nominal_trj.back());
-        U[0] = std::clamp(U[0], 0.1, 15.0);
-        double safe_gamma_dot_max = std::min(arg.gamma_dot_max * 0.8, 0.8);
-        U[1] = std::clamp(U[1], -safe_gamma_dot_max, safe_gamma_dot_max);
-        State X_next = ego.get_model().dynamics(nominal_trj.back(), U);
-        X_next[3] = std::clamp(X_next[3], arg.gamma_min * 0.9, arg.gamma_max * 0.9);
-        nominal_ctrl_sequence.push_back(U);
-        nominal_trj.push_back(X_next);
+
+    if(this->pre_solution.control_sequence.size()!=0){
+        // Warm start: use previous solution's control sequence
+        for(int i=0;i<(this->arg.N - 1);i++){
+            Control U = pre_solution.control_sequence.get_control_sequence()[i+1];
+            nominal_ctrl_sequence.push_back(U);
+        };
+        // Duplicate last control
+        nominal_ctrl_sequence.push_back(pre_solution.control_sequence.get_control_sequence()[arg.N-1]);
+        
+        // Generate trajectory from controls
+        State Xout;
+        Control U;
+        for(int i=0; i < this->arg.N; i++){
+            U = nominal_ctrl_sequence.get_control_sequence()[i];
+            Xout = this->ego.get_model().dynamics(X0,U); 
+            X0 = Xout;
+            nominal_trj.push_back(Xout);
+        }
+    }
+    else{
+        // Cold start: Pure Pursuit
+        for (int i=0;i<arg.N;i++){
+            Control U = pure_pursuit(nominal_trj.back());
+            U[0] = std::clamp(U[0], 0.1, 15.0);
+            double safe_gamma_dot_max = std::min(arg.gamma_dot_max * 0.8, 0.8);
+            U[1] = std::clamp(U[1], -safe_gamma_dot_max, safe_gamma_dot_max);
+            State X_next = ego.get_model().dynamics(nominal_trj.back(), U);
+            X_next[3] = std::clamp(X_next[3], arg.gamma_min * 0.9, arg.gamma_max * 0.9);
+            nominal_ctrl_sequence.push_back(U);
+            nominal_trj.push_back(X_next);
+        }
     }
     return Solution(nominal_trj, nominal_ctrl_sequence);
 }
@@ -1546,7 +1773,16 @@ Solution ALILQRSolver::forward(const Solution& cur_solution){
             for (int i = 0; i < arg.N; ++i) {
                 Vector4d delta_x = X_tmp[i] - cur_solution.ego_trj.get_states()[i];
                 U_tmp[i] += alpha * k[i] + K[i] * delta_x;
+                
+                // Clamp controls
+                U_tmp[i][0] = std::clamp(U_tmp[i][0], 0.0, 25.0); // Velocity limit (approx)
+                U_tmp[i][1] = std::clamp(U_tmp[i][1], arg.gamma_dot_min, arg.gamma_dot_max);
+                
                 X_tmp[i+1] = ego.get_model().dynamics(X_tmp[i], U_tmp[i]);
+                
+                // Clamp state gamma for stability
+                X_tmp[i+1][3] = std::clamp(X_tmp[i+1][3], arg.gamma_min - 0.1, arg.gamma_max + 0.1);
+
                 delta_V += alpha * (k[i].transpose() * Qu[i]).value() + alpha * alpha * 0.5 * (k[i].transpose() * Quu[i] * k[i]).value();
             }
             Solution s;
@@ -1573,7 +1809,16 @@ Solution ALILQRSolver::forward(const Solution& cur_solution){
         for (int i = 0; i < arg.N; ++i) {
             Vector4d delta_x = X_tmp[i] - cur_solution.ego_trj.get_states()[i];
             U_tmp[i] += alpha * k[i] + K[i] * delta_x;
+            
+            // Clamp controls
+            U_tmp[i][0] = std::clamp(U_tmp[i][0], 0.0, 25.0);
+            U_tmp[i][1] = std::clamp(U_tmp[i][1], arg.gamma_dot_min, arg.gamma_dot_max);
+
             X_tmp[i+1] = ego.get_model().dynamics(X_tmp[i], U_tmp[i]);
+            
+            // Clamp state gamma
+            X_tmp[i+1][3] = std::clamp(X_tmp[i+1][3], arg.gamma_min - 0.1, arg.gamma_max + 0.1);
+
             delta_V += alpha * (k[i].transpose() * Qu[i]).value() + alpha * alpha * 0.5 * (k[i].transpose() * Quu[i] * k[i]).value();
         }
         Solution s;
@@ -1591,39 +1836,41 @@ Solution ALILQRSolver::forward(const Solution& cur_solution){
     return cur_solution;
 }
 
-double ALILQRSolver::cal_cost_with_logging(const Solution& solution, int iteration) {
-    for (const auto& state : solution.ego_trj.get_states()) {
-        if (std::isnan(state[0]) || std::isnan(state[1]) || std::isnan(state[2]) || std::isnan(state[3])) {
-            return std::numeric_limits<double>::infinity();
-        }
-    }
-    for (const auto& control : solution.control_sequence.get_control_sequence()) {
-        if (std::isnan(control[0]) || std::isnan(control[1])) {
-            return std::numeric_limits<double>::infinity();
-        }
-    }
-    Vector2d P2; P2 << 0, 1;
-    const auto& control_sequence = solution.control_sequence.get_control_sequence();
-    const auto& trj = solution.ego_trj.get_states();
-    double J_state_total = 0;
-    double J_ctrl_total = 0;
-    double J_speed_rate_total = 0;
-    double J_constraint_total = 0;
+double ALILQRSolver::cal_cost(const Solution& solution) {
+    const auto& X_traj = solution.ego_trj.get_states();
+    const auto& U_seq = solution.control_sequence.get_control_sequence();
+    double J = 0.0;
+    
+    // State Costs
     for (int i = 0; i < arg.N + 1; ++i) {
-        const State& X = trj[i];
+        const State& X = X_traj[i];
         size_t index = find_closest_point(ego.get_local_plan().get_points(), X);
         size_t match_index = index == ego.get_local_plan().get_points().size() - 1 ? index : index + 1;
         const Point& X_r_point = ego.get_local_plan().get_points()[match_index];
-        State X_r = {X_r_point.x, X_r_point.y, X_r_point.heading, 0};
+        State X_r; X_r << X_r_point.x, X_r_point.y, X_r_point.heading, 0;
         State X_e = X - X_r;
-        J_state_total += X_e.transpose() * arg.Q * X_e;
-        Vector2d dX, nor_r; dX << X_e[0], X_e[1];
-        nor_r << -sin(X_r_point.heading), cos(X_r_point.heading);
-        J_state_total += pow(dX.dot(nor_r), 2) * arg.ref_weight;
-        double s_obs = 0.0;
+        
+        J += X_e.transpose() * arg.Q * X_e;
+        
+        Vector2d dX(X_e[0], X_e[1]);
+        Vector2d nor_r(-std::sin(X_r_point.heading), std::cos(X_r_point.heading));
+        J += pow(dX.dot(nor_r), 2) * arg.ref_weight;
+        
+        // Constraints (Augmented Lagrangian Terms)
+        // Gamma Max
+        double c_gmax = X[3] - arg.gamma_max;
+        double val_gmax = lambda_gamma_max[i] + mu_gamma_max[i] * c_gmax;
+        if (val_gmax > 0) J += lambda_gamma_max[i] * c_gmax + 0.5 * mu_gamma_max[i] * c_gmax * c_gmax;
+        
+        // Gamma Min
+        double c_gmin = arg.gamma_min - X[3];
+        double val_gmin = lambda_gamma_min[i] + mu_gamma_min[i] * c_gmin;
+        if (val_gmin > 0) J += lambda_gamma_min[i] * c_gmin + 0.5 * mu_gamma_min[i] * c_gmin * c_gmin;
+        
+        // Obstacles
         if (arg.if_cal_obs_cost) {
-            for (size_t obs_idx = 0; obs_idx < obs_list.size(); ++obs_idx) {
-                const Trajectory& obs = obs_list[obs_idx];
+            double max_c_obs = -1e9;
+            for (const auto& obs : obs_list) {
                 if (i >= obs.get_states().size()) continue;
                 const State& obs_state = obs.get_states()[i];
                 double dx = X[0] - obs_state[0];
@@ -1633,41 +1880,62 @@ double ALILQRSolver::cal_cost_with_logging(const Solution& solution, int iterati
                 Vector2d dX_obs(dx, dy);
                 Matrix2d R; R << cos(obs_state[2]), sin(obs_state[2]), -sin(obs_state[2]), cos(obs_state[2]);
                 Vector2d dX_obs_cord = R * dX_obs;
-                double c = 1 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
-                s_obs += std::max(0.0, c);
+                double c = 1.0 - (pow(dX_obs_cord[0],2)/pow(a,2) + pow(dX_obs_cord[1],2)/pow(b,2));
+                max_c_obs = std::max(max_c_obs, c);
+            }
+            if (max_c_obs > -1e8) {
+                double val = lambda_obs[i] + mu_obs[i] * max_c_obs;
+                if (val > 0) J += lambda_obs[i] * max_c_obs + 0.5 * mu_obs[i] * max_c_obs * max_c_obs;
             }
         }
-        double s_lane = 0.0;
+        
+        // Lane
         if (arg.if_cal_lane_cost) {
             double l = dX.dot(nor_r);
-            s_lane = std::max(0.0, l - arg.trace_safe_width_left) + std::max(0.0, -l - arg.trace_safe_width_right);
+            double c_left = l - arg.trace_safe_width_left;
+            double c_right = -l - arg.trace_safe_width_right;
+            double max_c_lane = std::max(c_left, c_right);
+            
+            double val = lambda_lane[i] + mu_lane[i] * max_c_lane;
+            if (val > 0) J += lambda_lane[i] * max_c_lane + 0.5 * mu_lane[i] * max_c_lane * max_c_lane;
         }
-        double gamma = X[3];
-        double s_gmax = std::max(0.0, gamma - arg.gamma_max);
-        double s_gmin = std::max(0.0, arg.gamma_min - gamma);
-        J_constraint_total += lambda_obs[i] * s_obs + 0.5 * rho * s_obs * s_obs;
-        J_constraint_total += lambda_lane[i] * s_lane + 0.5 * rho * s_lane * s_lane;
-        J_constraint_total += lambda_gamma_max[i] * s_gmax + 0.5 * rho * s_gmax * s_gmax;
-        J_constraint_total += lambda_gamma_min[i] * s_gmin + 0.5 * rho * s_gmin * s_gmin;
     }
+    
+    // Control Costs
     for (int i = 0; i < arg.N; ++i) {
-        const Control& U = control_sequence[i];
+        const Control& U = U_seq[i];
         Control U_ref = {arg.desire_speed, 0};
         Control U_e = U - U_ref;
-        J_ctrl_total += U_e.transpose() * arg.R * U_e;
-        double s_umax = std::max(0.0, U[1] - arg.gamma_dot_max);
-        double s_umin = std::max(0.0, arg.gamma_dot_min - U[1]);
-        J_constraint_total += lambda_gdot_max[i] * s_umax + 0.5 * rho * s_umax * s_umax;
-        J_constraint_total += lambda_gdot_min[i] * s_umin + 0.5 * rho * s_umin * s_umin;
+        J += U_e.transpose() * arg.R * U_e;
+        
+        // Gamma Dot Max
+        double c_umax = U[1] - arg.gamma_dot_max;
+        double val_umax = lambda_gdot_max[i] + mu_gdot_max[i] * c_umax;
+        if (val_umax > 0) J += lambda_gdot_max[i] * c_umax + 0.5 * mu_gdot_max[i] * c_umax * c_umax;
+        
+        // Gamma Dot Min
+        double c_umin = arg.gamma_dot_min - U[1];
+        double val_umin = lambda_gdot_min[i] + mu_gdot_min[i] * c_umin;
+        if (val_umin > 0) J += lambda_gdot_min[i] * c_umin + 0.5 * mu_gdot_min[i] * c_umin * c_umin;
     }
+    
+    // Speed Rate Cost
     if (arg.if_cal_speed_rate_cost) {
         for (int i = 0; i < arg.N - 1; ++i) {
-            const Control& U_cur = control_sequence[i];
-            const Control& U_next = control_sequence[i + 1];
+            const Control& U_cur = U_seq[i];
+            const Control& U_next = U_seq[i + 1];
             double v_diff = U_next[0] - U_cur[0];
-            J_speed_rate_total += arg.v_rate_weight * v_diff * v_diff;
+            J += arg.v_rate_weight * v_diff * v_diff;
         }
     }
-    return J_state_total + J_ctrl_total + J_constraint_total + J_speed_rate_total;
+    
+    return J;
+}
+
+double ALILQRSolver::cal_cost_with_logging(const Solution& solution, int iteration) {
+    // Just return the AL cost for now, logging can be added if needed but let's keep it simple
+    // The original cal_cost_with_logging was quite verbose.
+    // We can use cal_cost() here.
+    return cal_cost(solution);
 }
 

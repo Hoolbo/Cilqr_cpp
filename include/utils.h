@@ -82,6 +82,7 @@ void save_map_data(const MapData* map_data);
 std::string resolve_resource_path(const std::string& relative_path);
 // 新增：导出 m_map_info 到 outputs/data/m_map_info.json
 void save_m_map_info(const std::vector<std::vector<double>>& m_map_info);
+void ensure_directory_exists(const std::string& path);
 // 地图和路径相关函数
 std::vector<std::vector<double>> load_map(double startx=0, double starty=0, double theta=0);
 MapData load_bitmap_map(const std::string& file_path);
@@ -109,6 +110,8 @@ Trajectory predict_obstacle_trajectory(const State& initial_state, double dt, in
 
 
 
+
+
 // 占用栅格结构（用于快速碰撞检测）
 struct OccupancyGrid {
     int width;
@@ -128,6 +131,9 @@ bool is_collision_free_segment(const OccupancyGrid& grid, const Eigen::Vector2d&
 bool is_collision_free_polyline(const OccupancyGrid& grid, const std::vector<Eigen::Vector2d>& pts);
 // 查询世界坐标点到最近障碍栅格中心的距离（米）；若附近无障碍则返回一个大数
     double nearest_obstacle_distance_world(const OccupancyGrid& grid, const Eigen::Vector2d& p);
+
+// 自动生成障碍物
+std::vector<State> generate_obstacles(const GlobalPlan& global_plan, const OccupancyGrid& grid, int num_obstacles, double distance_from_path);
 
 void fill_global_path_points(std::vector<std::vector<double>>& global_plan_log);
 void set_global_path(GlobalPlan& global_plan, const std::vector<std::vector<double>>& global_plan_log);

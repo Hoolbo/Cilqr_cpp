@@ -8,6 +8,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
+# Global define for Windows to avoid min/max macro conflicts
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
 # 查找依赖库 - 暂时注释外部依赖以便测试
 # find_package(OpenCV REQUIRED)
 find_package(Eigen3 QUIET)

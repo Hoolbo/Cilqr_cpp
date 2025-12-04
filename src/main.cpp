@@ -41,13 +41,15 @@ int main(int argc, char** argv){
             std::cerr << "Invalid start/goal input; using defaults." << std::endl;
         }
     }
-    for(int ai=7; ai<argc; ++ai){
+    for(int ai=1; ai<argc; ++ai){
         std::string a = argv[ai];
         if(a == "--solver" && ai+1 < argc){
             solver_type = argv[ai+1];
             ++ai;
         }
     }
+    
+    std::cout << "======================== solver_type: " << solver_type << " ========================" <<std::endl;
     std::cout << "Start: (" << start_x << ", " << start_y << ", " << start_theta << ") | "
               << "Goal: (" << goal_x << ", " << goal_y << ", " << goal_theta << ")" << std::endl;
     
@@ -133,6 +135,7 @@ int main(int argc, char** argv){
     
     // 设置铰接角gamma的barrier约束
     arg.if_cal_gamma_barrier = true;
+    arg.if_cal_lane_cost = true; // Enable lane constraints
     arg.gamma_max = 1.0;  // 铰接角上限
     arg.gamma_min = -1.0; // 铰接角下限
     
@@ -154,42 +157,9 @@ int main(int argc, char** argv){
     }
     
     OccupancyGrid grid = make_occupancy_grid(bitmap_map, 0.1, 0.5);
-    const auto& planned_points = global_plan.get_points();
-    size_t M = planned_points.size();
-    auto P = [&](size_t i){ return Eigen::Vector2d(planned_points[i].x, planned_points[i].y); };
-    auto Th = [&](size_t i){ return planned_points[i].heading; };
-    size_t idx_turn = 0; double best_curv = 0.0;
-    for(size_t i=1;i+1<M;i++){
-        Eigen::Vector2d t0 = P(i) - P(i-1);
-        Eigen::Vector2d t1 = P(i+1) - P(i);
-        double a0 = std::atan2(t0.y(), t0.x());
-        double a1 = std::atan2(t1.y(), t1.x());
-        double d = std::atan2(std::sin(a1 - a0), std::cos(a1 - a0));
-        double c = std::abs(d);
-        if(c > best_curv){ best_curv = c; idx_turn = i; }
-    }
-    double th_turn = Th(idx_turn);
-    Eigen::Vector2d n_turn(-std::sin(th_turn), std::cos(th_turn));
-    Eigen::Vector2d p_turn = P(idx_turn);
-    double dpt = nearest_obstacle_distance_world(grid, p_turn + 0.5 * n_turn);
-    double dmt = nearest_obstacle_distance_world(grid, p_turn - 0.5 * n_turn);
-    Eigen::Vector2d n_turn_side = (dpt < dmt) ? n_turn : -n_turn;
-    double offset_turn = 3.0;
-    State obs1(p_turn.x() + offset_turn * n_turn_side.x(), p_turn.y() + offset_turn * n_turn_side.y(), th_turn, 0.0);
-    size_t idx_bottle = 0; double best_clear = 1e9;
-    for(size_t i=0;i<M;i++){
-        double clr = nearest_obstacle_distance_world(grid, P(i));
-        if(clr < best_clear){ best_clear = clr; idx_bottle = i; }
-    }
-    double th_b = Th(idx_bottle);
-    Eigen::Vector2d n_b(-std::sin(th_b), std::cos(th_b));
-    Eigen::Vector2d p_b = P(idx_bottle);
-    double dpb = nearest_obstacle_distance_world(grid, p_b + 0.5 * n_b);
-    double dmb = nearest_obstacle_distance_world(grid, p_b - 0.5 * n_b);
-    Eigen::Vector2d n_b_side = (dpb < dmb) ? n_b : -n_b;
-    double offset_b = std::max(1.0, best_clear * 0.8);
-    State obs2(p_b.x() + offset_b * n_b_side.x(), p_b.y() + offset_b * n_b_side.y(), th_b, 0.0);
-    std::vector<State> obs_initial_states = { obs1, obs2 };
+    // Generate obstacles automatically
+    // num_obstacles = 2, distance_from_path = 5.0 (tunable)
+    std::vector<State> obs_initial_states = generate_obstacles(global_plan, grid, 4, 3.5);
     
     std::vector<Trajectory> obs_trajectories;
     std::vector<State> current_obs_states;
@@ -197,15 +167,6 @@ int main(int argc, char** argv){
     // 为每个障碍物预测轨迹
     for(const auto& obs_state : obs_initial_states) {
         Trajectory obs_trj = predict_obstacle_trajectory(obs_state, arg.dt, arg.N);
-        // 快速验证：打印前5步预测
-        // std::cout << "Predicted obstacle (init) first 5 states:" << std::endl;
-        // for (int k = 0; k < std::min(5, (int)obs_trj.states.size()); ++k) {
-        //     std::cout << "  k=" << k
-        //               << " x=" << obs_trj.states[k][0]
-        //               << " y=" << obs_trj.states[k][1]
-        //               << " theta=" << obs_trj.states[k][2]
-        //               << " v=" << obs_trj.states[k][3] << std::endl;
-        // }
         obs_trajectories.push_back(obs_trj);
         current_obs_states.push_back(obs_state);
     }
@@ -220,19 +181,29 @@ int main(int argc, char** argv){
 
     //主循环
     // for(int i = 0;i<arg.tf/arg.dt;i++){
+    
     for(int i = 0;i<ITER;i++){
         std::cout<<"***** Iter ***** " << i <<std::endl;
         
         // 问题求解
         clock_t start = clock();
-        if(solver_type == "al"){
-            solution = alilqr_solver.solve(cur_state, obs_trajectories);
-        } else {
+        
+        if(solver_type == "cilqr"){
             solution = cilqr_solver.solve(cur_state, obs_trajectories);
+        } else if(solver_type == "alilqr"){
+            solution = alilqr_solver.solve(cur_state, obs_trajectories);
+        }
+        else{
+            std::cerr << "Wrong Solver Type :" << solver_type << std::endl; 
         }
         clock_t end = clock();
         double cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
         std::cout << "CPU time used: " << cpu_time_used * 1000 << " ms\n";
+        
+        // Update ego state and local plan for validation
+        ego.set_state(cur_state);
+        ego.set_local_plan();
+        
         double cmax = compute_max_violation(solution, ego, obs_trajectories, arg);
         std::cout << "CMax: " << cmax << "\n";
 
