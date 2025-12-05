@@ -32,10 +32,10 @@ def load_data(filename):
         print(f"Error loading {filename}: {e}")
         return None
 
-def load_map_data():
+def load_map_data(solver_type='cilqr'):
     """从maps目录加载地图数据"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    map_file = os.path.join(script_dir, 'outputs', 'maps', 'map_data.json')
+    map_file = os.path.join(script_dir, 'outputs', solver_type, 'maps', f'{solver_type}_map_data.json')
     
     try:
         with open(map_file, 'r') as f:
@@ -247,30 +247,30 @@ def process_single_frame(args):
         data = load_data(data_file)
         if data is not None:
             frame_num = int(os.path.basename(data_file).split('_')[-1].split('.')[0])
-            output_path = os.path.join(output_dir, f'cilqr_frame_{frame_num:04d}.png')
+            solver_type = os.path.basename(data_file).split('_')[0]
+            output_path = os.path.join(output_dir, f'{solver_type}_frame_{frame_num:04d}.png')
             visualize_frame(data, frame_num, worker_map_data, output_path)
             return frame_num
     except Exception as e:
         print(f"Error processing {data_file}: {e}")
     return None
 
-def process_all_frames(data_dir='outputs/data', limit=None):
+def process_all_frames(solver_type='cilqr', limit=None):
     """处理所有数据帧（可选限制帧数）"""
     # 获取脚本所在目录的绝对路径
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # 构建数据目录的绝对路径
-    if not os.path.isabs(data_dir):
-        data_dir = os.path.join(script_dir, data_dir)
+    data_dir = os.path.join(script_dir, 'outputs', solver_type, 'data')
     
     # 加载地图数据（只加载一次）
-    map_data = load_map_data()
+    map_data = load_map_data(solver_type)
     if map_data is None:
         print("Warning: No map data loaded. Visualization will not include map background.")
     else:
         print(f"Map data loaded: {map_data['width']}x{map_data['height']} pixels")
     
     # 查找所有数据文件
-    data_files = glob.glob(os.path.join(data_dir, 'cilqr_data_*.json'))
+    data_files = glob.glob(os.path.join(data_dir, f'{solver_type}_data_*.json'))
     data_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
     
     if limit is not None:
@@ -285,13 +285,11 @@ def process_all_frames(data_dir='outputs/data', limit=None):
     print(f"Found {len(data_files)} data files")
     
     # 创建输出目录
-    output_dir = 'outputs/images/cilqr_visualizations'
-    if not os.path.isabs(output_dir):
-        output_dir = os.path.join(script_dir, output_dir)
+    output_dir = os.path.join(script_dir, 'outputs', solver_type, 'images', 'visualizations')
     os.makedirs(output_dir, exist_ok=True)
     
     # 清空之前的图片文件
-    existing_images = glob.glob(os.path.join(output_dir, 'cilqr_frame_*.png'))
+    existing_images = glob.glob(os.path.join(output_dir, f'{solver_type}_frame_*.png'))
     if existing_images:
         print(f"Clearing {len(existing_images)} existing images...")
         for img_file in existing_images:
@@ -320,7 +318,7 @@ def process_all_frames(data_dir='outputs/data', limit=None):
     
     print(f"All frames processed! Images saved in '{output_dir}' directory")
 
-def create_animation(image_dir='outputs/images/cilqr_visualizations', output_name='outputs/images/cilqr_animation.gif'):
+def create_animation(solver_type='cilqr'):
     """创建动画GIF（需要安装pillow）"""
     try:
         from PIL import Image
@@ -328,14 +326,12 @@ def create_animation(image_dir='outputs/images/cilqr_visualizations', output_nam
         
         # 获取脚本所在目录的绝对路径
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        # 构建图像目录和输出文件的绝对路径
-        if not os.path.isabs(image_dir):
-            image_dir = os.path.join(script_dir, image_dir)
-        if not os.path.isabs(output_name):
-            output_name = os.path.join(script_dir, output_name)
+        
+        image_dir = os.path.join(script_dir, 'outputs', solver_type, 'images', 'visualizations')
+        output_name = os.path.join(script_dir, 'outputs', solver_type, 'images', f'{solver_type}_animation.gif')
         
         # 获取所有图像文件
-        image_files = glob.glob(os.path.join(image_dir, 'cilqr_frame_*.png'))
+        image_files = glob.glob(os.path.join(image_dir, f'{solver_type}_frame_*.png'))
         image_files.sort()
         
         if not image_files:
@@ -358,24 +354,25 @@ def create_animation(image_dir='outputs/images/cilqr_visualizations', output_nam
         print("Install with: pip install pillow")
 
 if __name__ == '__main__':
-    print("CILQR数据可视化工具")
-    print("==================")
-    print("功能：批量处理数据文件，生成可视化图像和动画")
-    print("地图显示：可行驶路径(白色) | 不可行驶路径(黑色)")
-    print()
+    print("数据可视化工具")
     
     parser = argparse.ArgumentParser(description='CILQR数据可视化工具')
+    parser.add_argument('--solver', type=str, default='cilqr', choices=['cilqr', 'alilqr'], help='选择求解器 (cilqr 或 alilqr)')
     parser.add_argument('--limit', type=int, default=None, help='限制处理的帧数，例如 --limit 50 只处理前50帧')
     parser.add_argument('--skip-animation', action='store_true', help='跳过生成GIF动画')
     args = parser.parse_args()
 
+    print(f"Processing data for solver: {args.solver}")
+
+    # args.solver = 'alilqr'
+
     # 处理所有帧（可选限制）
-    process_all_frames(limit=args.limit)
-    # create_animation(image_dir='outputs/images/cilqr_visualizations', output_name='outputs/images/cilqr_animation.gif')
+    process_all_frames(solver_type=args.solver, limit=args.limit)
+    
     # 创建动画（可选跳过）
     if not args.skip_animation:
-        create_animation()
+        create_animation(solver_type=args.solver)
     
     print("\n可视化完成！")
-    print("图像保存位置: outputs/images/cilqr_visualizations/")
-    print("动画保存位置: outputs/images/cilqr_animation.gif")
+    print(f"图像保存位置: outputs/{args.solver}/images/visualizations/")
+    print(f"动画保存位置: outputs/{args.solver}/images/{args.solver}_animation.gif")

@@ -17,6 +17,7 @@ struct RunConfig {
     double ITER = 280;
     std::string solver_type = "cilqr";
     std::string selected_map = "B301";
+    double obstacle_speed = 1.0;
 };
 
 // Define M_PI if not defined

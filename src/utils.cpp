@@ -964,14 +964,18 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     std::cout << "============================\n" << std::endl;
 }
 
-void save_map_data(const MapData* map_data) {
+void save_map_data(const MapData* map_data, const std::string& solver_type) {
     if (!map_data || map_data->width <= 0 || map_data->height <= 0 || map_data->data.empty()) {
         std::cout << "No valid map data to save" << std::endl;
         return;
     }
     
     // 获取当前工作目录并构建地图文件路径
+    // 获取当前工作目录并构建地图文件路径
+    // 获取当前工作目录并构建地图文件路径
     std::string map_filename;
+    std::string relative_path = "outputs/" + solver_type + "/maps/" + solver_type + "_map_data.json";
+    
     #ifdef _WIN32
         char buffer[MAX_PATH];
         GetModuleFileNameA(NULL, buffer, MAX_PATH);
@@ -981,13 +985,17 @@ void save_map_data(const MapData* map_data) {
         size_t build_pos = exe_dir.find("\\build");
         if (build_pos != std::string::npos) {
             std::string project_root = exe_dir.substr(0, build_pos);
-            map_filename = project_root + "\\outputs\\maps\\map_data.json";
+            map_filename = project_root + "\\" + "outputs\\" + solver_type + "\\maps\\" + solver_type + "_map_data.json";
         } else {
-            map_filename = "outputs/maps/map_data.json";
+            map_filename = relative_path;
         }
     #else
-        map_filename = "../outputs/maps/map_data.json";
+        map_filename = "../" + relative_path;
     #endif
+    
+    // Ensure directory exists
+    std::string dir_path = map_filename.substr(0, map_filename.find_last_of("/\\"));
+    ensure_directory_exists(dir_path);
     
     std::ofstream map_file(map_filename);
     if (map_file.is_open()) {
@@ -1660,13 +1668,16 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
                   const MapData* map_data,
                   const GlobalPlan& global_plan,
                   const SystemModel& vehicle_model,
-                  const Arg& arg) {
+                  const Arg& arg,
+                  const std::string& solver_type) {
     
     // 保存数据到文件供Python脚本使用
     static int frame_count = 0;
     
     // 获取当前工作目录并构建数据文件路径
     std::string data_filename;
+    std::string relative_path = "outputs/" + solver_type + "/data/" + solver_type + "_data_" + std::to_string(frame_count++) + ".json";
+
     #ifdef _WIN32
         char buffer[MAX_PATH];
         GetModuleFileNameA(NULL, buffer, MAX_PATH);
@@ -1676,13 +1687,17 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
         size_t build_pos = exe_dir.find("\\build");
         if (build_pos != std::string::npos) {
             std::string project_root = exe_dir.substr(0, build_pos);
-            data_filename = project_root + "\\outputs\\data\\cilqr_data_" + std::to_string(frame_count++) + ".json";
+            data_filename = project_root + "\\" + "outputs\\" + solver_type + "\\data\\" + solver_type + "_data_" + std::to_string(frame_count-1) + ".json";
         } else {
-            data_filename = "outputs/data/cilqr_data_" + std::to_string(frame_count++) + ".json";
+            data_filename = relative_path;
         }
     #else
-        data_filename = "../outputs/data/cilqr_data_" + std::to_string(frame_count++) + ".json";
+        data_filename = "../" + relative_path;
     #endif
+
+    // Ensure directory exists
+    std::string dir_path = data_filename.substr(0, data_filename.find_last_of("/\\"));
+    ensure_directory_exists(dir_path);
     
     std::ofstream data_file(data_filename);
     if (data_file.is_open()) {
@@ -1930,7 +1945,7 @@ double compute_max_violation(const Solution& solution, Vehicle& ego, const std::
 
 
 
-std::vector<State> generate_obstacles(const GlobalPlan& global_plan, const OccupancyGrid& grid, int num_obstacles, double distance_from_path) {
+std::vector<State> generate_obstacles(const GlobalPlan& global_plan, const OccupancyGrid& grid, int num_obstacles, double distance_from_path, double obstacle_speed) {
     std::vector<State> obstacles;
     if (num_obstacles <= 0) return obstacles;
     const auto& points = global_plan.get_points();
@@ -1985,7 +2000,7 @@ std::vector<State> generate_obstacles(const GlobalPlan& global_plan, const Occup
             p_obs = p + offset_dist * n_side;
         }
         
-        return State(p_obs.x(), p_obs.y(), th, 0.0);
+        return State(p_obs.x(), p_obs.y(), th, obstacle_speed);
     };
 
     // Add obstacles
@@ -2046,4 +2061,57 @@ void ensure_directory_exists(const std::string& path) {
     std::string cmd = "mkdir -p \"" + path + "\"";
     system(cmd.c_str());
 #endif
+}
+
+// 新增：导出 m_map_info 到 outputs/data/m_map_info.json
+void save_m_map_info(const std::vector<std::vector<double>>& m_map_info, const std::string& solver_type) {
+    if (m_map_info.size() < 3) return;
+    
+    std::string filename;
+    std::string relative_path = "outputs/" + solver_type + "/data/" + solver_type + "_m_map_info.json";
+    
+    #ifdef _WIN32
+        char buffer[MAX_PATH];
+        GetModuleFileNameA(NULL, buffer, MAX_PATH);
+        std::string exe_path(buffer);
+        std::string exe_dir = exe_path.substr(0, exe_path.find_last_of("\\"));
+        size_t build_pos = exe_dir.find("\\build");
+        if (build_pos != std::string::npos) {
+            std::string project_root = exe_dir.substr(0, build_pos);
+            filename = project_root + "\\" + "outputs\\" + solver_type + "\\data\\" + solver_type + "_m_map_info.json";
+        } else {
+            filename = relative_path;
+        }
+    #else
+        filename = "../" + relative_path;
+    #endif
+
+    // Ensure directory exists
+    std::string dir_path = filename.substr(0, filename.find_last_of("/\\"));
+    ensure_directory_exists(dir_path);
+    
+    std::ofstream file(filename);
+    if (file.is_open()) {
+        file << "{\n";
+        file << "  \"x\": [";
+        for (size_t i = 0; i < m_map_info[0].size(); ++i) {
+            file << m_map_info[0][i] << (i < m_map_info[0].size() - 1 ? ", " : "");
+        }
+        file << "],\n";
+        file << "  \"y\": [";
+        for (size_t i = 0; i < m_map_info[1].size(); ++i) {
+            file << m_map_info[1][i] << (i < m_map_info[1].size() - 1 ? ", " : "");
+        }
+        file << "],\n";
+        file << "  \"heading\": [";
+        for (size_t i = 0; i < m_map_info[2].size(); ++i) {
+            file << m_map_info[2][i] << (i < m_map_info[2].size() - 1 ? ", " : "");
+        }
+        file << "]\n";
+        file << "}\n";
+        file.close();
+        std::cout << "m_map_info saved to: " << filename << std::endl;
+    } else {
+        std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
+    }
 }

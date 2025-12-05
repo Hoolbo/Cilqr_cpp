@@ -136,6 +136,7 @@ void load_config(const std::string& main_config_file,
             run_config.goal_y = get_double(rc, "goal_y", run_config.goal_y);
             run_config.goal_theta = get_double(rc, "goal_theta", run_config.goal_theta);
             run_config.ITER = get_double(rc, "ITER", run_config.ITER);
+            run_config.obstacle_speed = get_double(rc, "obstacle_speed", run_config.obstacle_speed);
             
             std::string st = get_value_str(rc, "solver_type");
             if (!st.empty()) {

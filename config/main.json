@@ -1,14 +1,15 @@
 {
     "run_config": {
-        "start_x": 70.0,
-        "start_y": 60.0,
-        "start_theta": 1.2,
+        "start_x": 100.0,
+        "start_y": 70.0,
+        "start_theta": 0,
         "goal_x": 180.0,
         "goal_y": 127.0,
         "goal_theta": 1.8,
-        "ITER": 280,
+        "ITER": 200,
         "solver_type": "cilqr",
-        "selected_map": "B301"
+        "selected_map": "B301",
+        "obstacle_speed": 1.0
     },
     "simulation": {
         "tf": 1000.0,

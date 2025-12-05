@@ -290,6 +290,7 @@ class CILQRSolver{
         Vehicle ego;
         std::vector<Trajectory> obs_list;
         Arg arg;
+        std::string solver_name;
         
         // 日志记录相关
         std::string log_filename;
@@ -327,8 +328,8 @@ class CILQRSolver{
 
     public:
         //构造函数
-        CILQRSolver(const Vehicle& ego, const std::vector<Trajectory>& obs_list, const Arg& arg) 
-        : ego(ego), obs_list(obs_list), arg(arg), lamb(arg.lamb_init),
+        CILQRSolver(const Vehicle& ego, const std::vector<Trajectory>& obs_list, const Arg& arg, const std::string& solver_name = "cilqr") 
+        : ego(ego), obs_list(obs_list), arg(arg), solver_name(solver_name), lamb(arg.lamb_init),
         k(arg.N),
         K(arg.N),
         df_dx(arg.N),

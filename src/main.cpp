@@ -30,7 +30,7 @@ void parse_arguments(int argc, char** argv, RunConfig& config) {
 }
 
 // Function to load and process the map
-MapData load_and_process_map(const std::string& selected_map) {
+MapData load_and_process_map(const std::string& selected_map, const std::string& solver_type) {
     std::string map_file = resolve_resource_path("Maps/bitmap/" + selected_map + "_global_map.json");
     std::cout << "Loading map file: " << map_file << " (Selected: " << selected_map << ")" << std::endl;
     
@@ -44,7 +44,8 @@ MapData load_and_process_map(const std::string& selected_map) {
     }
     
     std::cout << "About to save map data..." << std::endl;
-    save_map_data(&bitmap_map);
+    std::cout << "About to save map data..." << std::endl;
+    save_map_data(&bitmap_map, solver_type);
     std::cout << "Map data save operation completed." << std::endl;
     
     return bitmap_map;
@@ -81,7 +82,8 @@ GlobalPlan perform_global_planning(const MapData& bitmap_map, const RunConfig& c
     }
     
     std::cout << "Global path planned. m_map_info points: " << planned_points.size() << std::endl;
-    save_m_map_info(m_map_info);
+    std::cout << "Global path planned. m_map_info points: " << planned_points.size() << std::endl;
+    save_m_map_info(m_map_info, config.solver_type);
     
     return global_plan;
 }
@@ -104,10 +106,10 @@ void finalize_parameters(Arg& arg) {
 }
 
 // Function to initialize obstacles
-ObstacleData initialize_obstacles(const GlobalPlan& global_plan, const MapData& bitmap_map, const Arg& arg) {
+ObstacleData initialize_obstacles(const GlobalPlan& global_plan, const MapData& bitmap_map, const Arg& arg, double obstacle_speed) {
     ObstacleData obs_data;
     OccupancyGrid grid = make_occupancy_grid(bitmap_map, 0.1, 0.5);
-    std::vector<State> obs_initial_states = generate_obstacles(global_plan, grid, 4, 3.5);
+    std::vector<State> obs_initial_states = generate_obstacles(global_plan, grid, 4, 3.5, obstacle_speed);
     
     for(const auto& obs_state : obs_initial_states) {
         Trajectory obs_trj = predict_obstacle_trajectory(obs_state, arg.dt, arg.N);
@@ -156,7 +158,7 @@ int main(int argc, char** argv){
 
     // 2. Load Map
     // 2. Load Map
-    MapData bitmap_map = load_and_process_map(run_config.selected_map);
+    MapData bitmap_map = load_and_process_map(run_config.selected_map, run_config.solver_type);
     
     // 3. Global Planning
     std::vector<std::vector<double>> m_map_info(3);
@@ -183,10 +185,10 @@ int main(int argc, char** argv){
     }
 
     // 6. Initialize Obstacles
-    ObstacleData obs_data = initialize_obstacles(global_plan, bitmap_map, arg);
+    ObstacleData obs_data = initialize_obstacles(global_plan, bitmap_map, arg, run_config.obstacle_speed);
 
     // 7. Initialize Solvers
-    CILQRSolver cilqr_solver(ego, obs_data.trajectories, arg);
+    CILQRSolver cilqr_solver(ego, obs_data.trajectories, arg, "cilqr");
     ALILQRSolver alilqr_solver(ego, obs_data.trajectories, arg);
     Solution solution;
     Control cur_ctrl;
@@ -230,7 +232,7 @@ int main(int argc, char** argv){
         update_obstacle_states(obs_data, arg);
 
         // Visualization
-        dynamic_plot(global_plan_log, ego_log, obs_data.trajectories, solution, &bitmap_map, global_plan, ego.get_model(), arg);
+        dynamic_plot(global_plan_log, ego_log, obs_data.trajectories, solution, &bitmap_map, global_plan, ego.get_model(), arg, run_config.solver_type);
     }
 
     return 0;

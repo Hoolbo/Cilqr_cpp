@@ -1149,11 +1149,11 @@ void CILQRSolver::init_cost_logging() {
     auto tm = *std::localtime(&time_t);
     
     std::ostringstream oss;
-    oss << "cost_analysis_" << std::put_time(&tm, "%Y%m%d_%H%M%S") << ".csv";
+    oss << solver_name << "_cost_analysis_" << std::put_time(&tm, "%Y%m%d_%H%M%S") << ".csv";
     std::string filename = oss.str();
     
     // Ensure output directory exists
-    std::string relative_dir = "outputs/logs";
+    std::string relative_dir = "outputs/" + solver_name + "/logs";
     std::string full_dir_path = resolve_resource_path(relative_dir);
     
     ensure_directory_exists(full_dir_path);
