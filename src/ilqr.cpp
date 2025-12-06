@@ -186,9 +186,9 @@ Solution CILQRSolver::solve(const State& init_state,const std::vector<Trajectory
             double dy = cur_state[1] - goal_pt.y;
             double dist_to_goal = std::sqrt(dx*dx + dy*dy);
             if (dist_to_goal < 10.0) {
-                // 使用更平滑的线性衰减，并设置一个最小速度，避免速度被压到接近0
-                double min_speed = 1.0;
-                arg.desire_speed = std::max(min_speed, arg.desire_speed * dist_to_goal / 10.0);
+                // Allow speed to decay to 0 to ensure stopping at the goal
+                arg.desire_speed = arg.desire_speed * dist_to_goal / 10.0;
+                if (arg.desire_speed < 0.1) arg.desire_speed = 0;
             }
             // 终点附近保持期望航向为 0（如不需要可后续移除）
             arg.desire_heading = 0;
@@ -366,7 +366,7 @@ Solution CILQRSolver::get_nominal_solution(const State& init_state){
             
             // 约束预处理：确保初始控制序列满足约束条件
             // 限制速度在合理范围内
-            U[0] = std::clamp(U[0], 0.1, 15.0);
+            U[0] = std::clamp(U[0], 0.0, 15.0);
             
             // 限制铰接角速度在安全范围内，使用更保守的初始值
             double safe_gamma_dot_max = std::min(arg.gamma_dot_max * 0.8, 0.8);
