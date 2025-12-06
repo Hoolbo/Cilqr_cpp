@@ -126,28 +126,40 @@ void load_config(const std::string& main_config_file,
     // 1. Load Main Config
     std::string main_json = remove_comments_and_whitespace(load_file_content(main_config_file));
     if (!main_json.empty()) {
-        // RunConfig
-        std::string rc = get_section(main_json, "run_config");
-        if (!rc.empty()) {
-            run_config.start_x = get_double(rc, "start_x", run_config.start_x);
-            run_config.start_y = get_double(rc, "start_y", run_config.start_y);
-            run_config.start_theta = get_double(rc, "start_theta", run_config.start_theta);
-            run_config.goal_x = get_double(rc, "goal_x", run_config.goal_x);
-            run_config.goal_y = get_double(rc, "goal_y", run_config.goal_y);
-            run_config.goal_theta = get_double(rc, "goal_theta", run_config.goal_theta);
-            run_config.ITER = get_double(rc, "ITER", run_config.ITER);
-            run_config.obstacle_speed = get_double(rc, "obstacle_speed", run_config.obstacle_speed);
-            
-            std::string st = get_value_str(rc, "solver_type");
-            if (!st.empty()) {
-                 if (st.front() == '"') st = st.substr(1, st.length() - 2);
-                 run_config.solver_type = st;
+        // Read selected_map first
+        std::string sm = get_value_str(main_json, "selected_map");
+        if (!sm.empty()) {
+             if (sm.front() == '"') sm = sm.substr(1, sm.length() - 2);
+             run_config.selected_map = sm;
+        }
+
+        // RunConfigs
+        std::string rcs = get_section(main_json, "run_configs");
+        if (!rcs.empty()) {
+            // Try to get config for selected_map
+            std::string rc = get_section(rcs, run_config.selected_map);
+            if (rc.empty()) {
+                std::cerr << "Warning: Config for map " << run_config.selected_map << " not found. Using default." << std::endl;
+                rc = get_section(rcs, "default");
             }
-            
-            std::string sm = get_value_str(rc, "selected_map");
-            if (!sm.empty()) {
-                 if (sm.front() == '"') sm = sm.substr(1, sm.length() - 2);
-                 run_config.selected_map = sm;
+
+            if (!rc.empty()) {
+                run_config.start_x = get_double(rc, "start_x", run_config.start_x);
+                run_config.start_y = get_double(rc, "start_y", run_config.start_y);
+                run_config.start_theta = get_double(rc, "start_theta", run_config.start_theta);
+                run_config.goal_x = get_double(rc, "goal_x", run_config.goal_x);
+                run_config.goal_y = get_double(rc, "goal_y", run_config.goal_y);
+                run_config.goal_theta = get_double(rc, "goal_theta", run_config.goal_theta);
+                run_config.ITER = get_double(rc, "ITER", run_config.ITER);
+                run_config.obstacle_speed = get_double(rc, "obstacle_speed", run_config.obstacle_speed);
+                run_config.obstacle_count = get_int(rc, "obstacle_count", run_config.obstacle_count);
+                run_config.obstacle_distance = get_double(rc, "obstacle_distance", run_config.obstacle_distance);
+                
+                std::string st = get_value_str(rc, "solver_type");
+                if (!st.empty()) {
+                     if (st.front() == '"') st = st.substr(1, st.length() - 2);
+                     run_config.solver_type = st;
+                }
             }
         }
 

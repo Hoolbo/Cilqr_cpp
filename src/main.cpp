@@ -106,10 +106,10 @@ void finalize_parameters(Arg& arg) {
 }
 
 // Function to initialize obstacles
-ObstacleData initialize_obstacles(const GlobalPlan& global_plan, const MapData& bitmap_map, const Arg& arg, double obstacle_speed) {
+ObstacleData initialize_obstacles(const GlobalPlan& global_plan, const MapData& bitmap_map, const Arg& arg, const RunConfig& run_config) {
     ObstacleData obs_data;
     OccupancyGrid grid = make_occupancy_grid(bitmap_map, 0.1, 0.5);
-    std::vector<State> obs_initial_states = generate_obstacles(global_plan, grid, 4, 3.5, obstacle_speed);
+    std::vector<State> obs_initial_states = generate_obstacles(global_plan, grid, run_config.obstacle_count, run_config.obstacle_distance, run_config.obstacle_speed);
     
     for(const auto& obs_state : obs_initial_states) {
         Trajectory obs_trj = predict_obstacle_trajectory(obs_state, arg.dt, arg.N);
@@ -185,7 +185,7 @@ int main(int argc, char** argv){
     }
 
     // 6. Initialize Obstacles
-    ObstacleData obs_data = initialize_obstacles(global_plan, bitmap_map, arg, run_config.obstacle_speed);
+    ObstacleData obs_data = initialize_obstacles(global_plan, bitmap_map, arg, run_config);
 
     // 7. Initialize Solvers
     CILQRSolver cilqr_solver(ego, obs_data.trajectories, arg, "cilqr");

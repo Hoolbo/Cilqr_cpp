@@ -1,15 +1,58 @@
 {
-    "run_config": {
-        "start_x": 100.0,
-        "start_y": 70.0,
-        "start_theta": 0,
-        "goal_x": 180.0,
-        "goal_y": 127.0,
-        "goal_theta": 1.8,
-        "ITER": 200,
-        "solver_type": "cilqr",
-        "selected_map": "B301",
-        "obstacle_speed": 1.0
+    "selected_map": "B207",
+    "run_configs": {
+        "B201": {
+            "start_x": 10.0,
+            "start_y": 20.0,
+            "start_theta": 1.2,
+            "goal_x": 80.0,
+            "goal_y": 80.0,
+            "goal_theta": 1,
+            "ITER": 200,
+            "solver_type": "cilqr",
+            "obstacle_speed": 1.0,
+            "obstacle_count": 2,
+            "obstacle_distance": 3.5
+        },
+        "B207": {
+            "start_x": 70.0,
+            "start_y": 8.0,
+            "start_theta": 1.57,
+            "goal_x": 60.0,
+            "goal_y": 100.0,
+            "goal_theta": 2,
+            "ITER": 200,
+            "solver_type": "cilqr",
+            "obstacle_speed": 0,
+            "obstacle_count": 4,
+            "obstacle_distance": 4
+        },
+        "B301": {
+            "start_x": 100.0,
+            "start_y": 70.0,
+            "start_theta": 0,
+            "goal_x": 180.0,
+            "goal_y": 127.0,
+            "goal_theta": 1.8,
+            "ITER": 200,
+            "solver_type": "cilqr",
+            "obstacle_speed": 0,
+            "obstacle_count": 4,
+            "obstacle_distance": 3.5
+        },
+        "default": {
+            "start_x": 0.0,
+            "start_y": 0.0,
+            "start_theta": 0,
+            "goal_x": 10.0,
+            "goal_y": 10.0,
+            "goal_theta": 0,
+            "ITER": 200,
+            "solver_type": "cilqr",
+            "obstacle_speed": 1.0,
+            "obstacle_count": 4,
+            "obstacle_distance": 3.5
+        }
     },
     "simulation": {
         "tf": 1000.0,
