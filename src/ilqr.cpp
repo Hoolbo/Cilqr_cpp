@@ -1153,7 +1153,7 @@ void CILQRSolver::init_cost_logging() {
     std::string filename = oss.str();
     
     // Ensure output directory exists
-    std::string relative_dir = "outputs/" + solver_name + "/logs";
+    std::string relative_dir = "outputs/" + map_name + "/" + solver_name + "/logs";
     std::string full_dir_path = resolve_resource_path(relative_dir);
     
     ensure_directory_exists(full_dir_path);

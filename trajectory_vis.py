@@ -32,10 +32,11 @@ def load_data(filename):
         print(f"Error loading {filename}: {e}")
         return None
 
-def load_map_data(solver_type='cilqr'):
-    """从maps目录加载地图数据"""
+def load_map_data(map_name):
+    """从Maps/bitmap目录加载原始地图数据"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    map_file = os.path.join(script_dir, 'outputs', solver_type, 'maps', f'{solver_type}_map_data.json')
+    # Directly load from the source Maps directory since we stopped saving copies to outputs
+    map_file = os.path.join(script_dir, 'Maps', 'bitmap', f'{map_name}_global_map.json')
     
     try:
         with open(map_file, 'r') as f:
@@ -147,10 +148,20 @@ def visualize_frame(data, frame_num, map_data=None, save_path=None):
     
     # 绘制地图背景（从单独的地图数据文件加载）
     if map_data is not None:
-        width = map_data['width']
-        height = map_data['height']
-        resolution = map_data['resolution']
-        origin = map_data['origin']
+        # Handle new map format with metadata
+        if 'metadata' in map_data:
+            dims = map_data['metadata']['dimensions']
+            width = dims['width']
+            height = dims['height']
+            resolution = dims['resolution']
+            origin = map_data['metadata']['origin']
+        else:
+            # Fallback for old format
+            width = map_data.get('width', 100)
+            height = map_data.get('height', 100)
+            resolution = map_data.get('resolution', 0.1)
+            origin = map_data.get('origin', [0, 0])
+            
         map_array = np.array(map_data['data'])
         
         # 计算地图范围
@@ -255,19 +266,41 @@ def process_single_frame(args):
         print(f"Error processing {data_file}: {e}")
     return None
 
-def process_all_frames(solver_type='cilqr', limit=None):
+def process_all_frames(solver_type='cilqr', map_name='B201', limit=None):
     """处理所有数据帧（可选限制帧数）"""
     # 获取脚本所在目录的绝对路径
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # 构建数据目录的绝对路径
-    data_dir = os.path.join(script_dir, 'outputs', solver_type, 'data')
+    # 构建数据目录的绝对路径: outputs/<map_name>/<solver_type>/data
+    data_dir = os.path.join(script_dir, 'outputs', map_name, solver_type, 'data')
     
+    # Check if data directory exists
+    if not os.path.exists(data_dir):
+        print(f"Error: Data directory not found: {data_dir}")
+        return
+
     # 加载地图数据（只加载一次）
-    map_data = load_map_data(solver_type)
+    map_data = load_map_data(map_name)
     if map_data is None:
         print("Warning: No map data loaded. Visualization will not include map background.")
     else:
-        print(f"Map data loaded: {map_data['width']}x{map_data['height']} pixels")
+        # Pre-process map data to handle mixed types (strings "-1" and numbers)
+        try:
+            raw_data = np.array(map_data['data'])
+            # Replace string "-1" with -1
+            raw_data[raw_data == "-1"] = -1
+            # Convert to float
+            map_data['data'] = raw_data.astype(float)
+            print("Map data converted to float numpy array")
+        except Exception as e:
+            print(f"Error converting map data: {e}")
+
+        if 'metadata' in map_data:
+            w = map_data['metadata']['dimensions']['width']
+            h = map_data['metadata']['dimensions']['height']
+        else:
+            w = map_data.get('width', '?')
+            h = map_data.get('height', '?')
+        print(f"Map data loaded: {w}x{h} pixels")
     
     # 查找所有数据文件
     data_files = glob.glob(os.path.join(data_dir, f'{solver_type}_data_*.json'))
@@ -284,8 +317,8 @@ def process_all_frames(solver_type='cilqr', limit=None):
     
     print(f"Found {len(data_files)} data files")
     
-    # 创建输出目录
-    output_dir = os.path.join(script_dir, 'outputs', solver_type, 'images', 'visualizations')
+    # 创建输出目录: outputs/<map_name>/<solver_type>/images/visualizations
+    output_dir = os.path.join(script_dir, 'outputs', map_name, solver_type, 'images', 'visualizations')
     os.makedirs(output_dir, exist_ok=True)
     
     # 清空之前的图片文件
@@ -318,7 +351,7 @@ def process_all_frames(solver_type='cilqr', limit=None):
     
     print(f"All frames processed! Images saved in '{output_dir}' directory")
 
-def create_animation(solver_type='cilqr'):
+def create_animation(solver_type='cilqr', map_name='B201'):
     """创建动画GIF（需要安装pillow）"""
     try:
         from PIL import Image
@@ -327,8 +360,8 @@ def create_animation(solver_type='cilqr'):
         # 获取脚本所在目录的绝对路径
         script_dir = os.path.dirname(os.path.abspath(__file__))
         
-        image_dir = os.path.join(script_dir, 'outputs', solver_type, 'images', 'visualizations')
-        output_name = os.path.join(script_dir, 'outputs', solver_type, 'images', f'{solver_type}_animation.gif')
+        image_dir = os.path.join(script_dir, 'outputs', map_name, solver_type, 'images', 'visualizations')
+        output_name = os.path.join(script_dir, 'outputs', map_name, solver_type, 'images', f'{solver_type}_animation.gif')
         
         # 获取所有图像文件
         image_files = glob.glob(os.path.join(image_dir, f'{solver_type}_frame_*.png'))
@@ -358,21 +391,22 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='CILQR数据可视化工具')
     parser.add_argument('--solver', type=str, default='cilqr', choices=['cilqr', 'alilqr'], help='选择求解器 (cilqr 或 alilqr)')
+    parser.add_argument('--map', type=str, required=True, help='选择地图名称 (例如 B201)')
     parser.add_argument('--limit', type=int, default=None, help='限制处理的帧数，例如 --limit 50 只处理前50帧')
     parser.add_argument('--skip-animation', action='store_true', help='跳过生成GIF动画')
     args = parser.parse_args()
 
-    print(f"Processing data for solver: {args.solver}")
+    print(f"Processing data for map: {args.map}, solver: {args.solver}")
 
     # args.solver = 'alilqr'
-
+    # args.map = 'B201'
     # 处理所有帧（可选限制）
-    process_all_frames(solver_type=args.solver, limit=args.limit)
+    process_all_frames(solver_type=args.solver, map_name=args.map, limit=args.limit)
     
     # 创建动画（可选跳过）
     if not args.skip_animation:
-        create_animation(solver_type=args.solver)
+        create_animation(solver_type=args.solver, map_name=args.map)
     
     print("\n可视化完成！")
-    print(f"图像保存位置: outputs/{args.solver}/images/visualizations/")
-    print(f"动画保存位置: outputs/{args.solver}/images/{args.solver}_animation.gif")
+    print(f"图像保存位置: outputs/{args.map}/{args.solver}/images/visualizations/")
+    print(f"动画保存位置: outputs/{args.map}/{args.solver}/images/{args.solver}_animation.gif")

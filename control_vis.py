@@ -3,6 +3,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+import argparse
+import sys
 
 def read_cilqr_data(data_folder):
     """
@@ -140,16 +142,22 @@ def plot_cilqr_data(time_steps, velocities, gammas):
 
 def main():
     """Main function"""
+    parser = argparse.ArgumentParser(description='CILQR Control Output Visualization')
+    parser.add_argument('--map', type=str, required=True, help='Map name (e.g. B201)')
+    parser.add_argument('--solver', type=str, default='cilqr', choices=['cilqr', 'alilqr'], help='Solver type')
+    args = parser.parse_args()
+
     # Data folder path
     script_dir = os.path.dirname(__file__)
-    data_folder = os.path.join(script_dir, "data")
+    # Path: outputs/<map_name>/<solver_type>/data
+    data_folder = os.path.join(script_dir, "outputs", args.map, args.solver, "data")
     
     # Check if folder exists
     if not os.path.exists(data_folder):
         print(f"Error: Data folder does not exist: {data_folder}")
         return
     
-    print("Starting to read CILQR data...")
+    print(f"Starting to read {args.solver} data from {data_folder}...")
     
     # Read data
     time_steps, velocities, gammas = read_cilqr_data(data_folder)
@@ -163,13 +171,14 @@ def main():
     # Plot charts
     fig = plot_cilqr_data(time_steps, velocities, gammas)
     
-    # Save chart
-    output_path = os.path.join(script_dir, "cilqr_analysis.png")
+    # Save chart: outputs/<map_name>/<solver_type>/<solver>_analysis.png
+    output_dir = os.path.join(script_dir, "outputs", args.map, args.solver)
+    output_path = os.path.join(output_dir, f"{args.solver}_analysis.png")
     fig.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"\nChart saved to: {output_path}")
     
     # Show chart
-    plt.show()
+    # plt.show() # Commented out for headless execution
 
 if __name__ == "__main__":
     main()

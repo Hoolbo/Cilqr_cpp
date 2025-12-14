@@ -964,7 +964,7 @@ void my_plot(const std::vector<std::vector<double>>& global_plan_log,
     std::cout << "============================\n" << std::endl;
 }
 
-void save_map_data(const MapData* map_data, const std::string& solver_type) {
+void save_map_data(const MapData* map_data, const std::string& solver_type, const std::string& map_name) {
     if (!map_data || map_data->width <= 0 || map_data->height <= 0 || map_data->data.empty()) {
         std::cout << "No valid map data to save" << std::endl;
         return;
@@ -974,7 +974,7 @@ void save_map_data(const MapData* map_data, const std::string& solver_type) {
     // 获取当前工作目录并构建地图文件路径
     // 获取当前工作目录并构建地图文件路径
     std::string map_filename;
-    std::string relative_path = "outputs/" + solver_type + "/maps/" + solver_type + "_map_data.json";
+    std::string relative_path = "outputs/" + map_name + "/" + solver_type + "/maps/" + solver_type + "_map_data.json";
     
     #ifdef _WIN32
         char buffer[MAX_PATH];
@@ -985,7 +985,7 @@ void save_map_data(const MapData* map_data, const std::string& solver_type) {
         size_t build_pos = exe_dir.find("\\build");
         if (build_pos != std::string::npos) {
             std::string project_root = exe_dir.substr(0, build_pos);
-            map_filename = project_root + "\\" + "outputs\\" + solver_type + "\\maps\\" + solver_type + "_map_data.json";
+            map_filename = project_root + "\\" + "outputs\\" + map_name + "\\" + solver_type + "\\maps\\" + solver_type + "_map_data.json";
         } else {
             map_filename = relative_path;
         }
@@ -1669,14 +1669,15 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
                   const GlobalPlan& global_plan,
                   const SystemModel& vehicle_model,
                   const Arg& arg,
-                  const std::string& solver_type) {
+                  const std::string& solver_type,
+                  const std::string& map_name) {
     
     // 保存数据到文件供Python脚本使用
     static int frame_count = 0;
     
     // 获取当前工作目录并构建数据文件路径
     std::string data_filename;
-    std::string relative_path = "outputs/" + solver_type + "/data/" + solver_type + "_data_" + std::to_string(frame_count++) + ".json";
+    std::string relative_path = "outputs/" + map_name + "/" + solver_type + "/data/" + solver_type + "_data_" + std::to_string(frame_count++) + ".json";
 
     #ifdef _WIN32
         char buffer[MAX_PATH];
@@ -1687,7 +1688,7 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
         size_t build_pos = exe_dir.find("\\build");
         if (build_pos != std::string::npos) {
             std::string project_root = exe_dir.substr(0, build_pos);
-            data_filename = project_root + "\\" + "outputs\\" + solver_type + "\\data\\" + solver_type + "_data_" + std::to_string(frame_count-1) + ".json";
+            data_filename = project_root + "\\" + "outputs\\" + map_name + "\\" + solver_type + "\\data\\" + solver_type + "_data_" + std::to_string(frame_count-1) + ".json";
         } else {
             data_filename = relative_path;
         }
@@ -2064,11 +2065,11 @@ void ensure_directory_exists(const std::string& path) {
 }
 
 // 新增：导出 m_map_info 到 outputs/data/m_map_info.json
-void save_m_map_info(const std::vector<std::vector<double>>& m_map_info, const std::string& solver_type) {
+void save_m_map_info(const std::vector<std::vector<double>>& m_map_info, const std::string& solver_type, const std::string& map_name) {
     if (m_map_info.size() < 3) return;
     
     std::string filename;
-    std::string relative_path = "outputs/" + solver_type + "/data/" + solver_type + "_m_map_info.json";
+    std::string relative_path = "outputs/" + map_name + "/" + solver_type + "/data/" + solver_type + "_m_map_info.json";
     
     #ifdef _WIN32
         char buffer[MAX_PATH];
@@ -2078,7 +2079,7 @@ void save_m_map_info(const std::vector<std::vector<double>>& m_map_info, const s
         size_t build_pos = exe_dir.find("\\build");
         if (build_pos != std::string::npos) {
             std::string project_root = exe_dir.substr(0, build_pos);
-            filename = project_root + "\\" + "outputs\\" + solver_type + "\\data\\" + solver_type + "_m_map_info.json";
+            filename = project_root + "\\" + "outputs\\" + map_name + "\\" + solver_type + "\\data\\" + solver_type + "_m_map_info.json";
         } else {
             filename = relative_path;
         }

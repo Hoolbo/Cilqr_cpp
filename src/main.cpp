@@ -43,10 +43,9 @@ MapData load_and_process_map(const std::string& selected_map, const std::string&
         std::cout << "First row size: " << bitmap_map.data[0].size() << std::endl;
     }
     
-    std::cout << "About to save map data..." << std::endl;
-    std::cout << "About to save map data..." << std::endl;
-    save_map_data(&bitmap_map, solver_type);
-    std::cout << "Map data save operation completed." << std::endl;
+    // Map saving removed as per user request (maps output folder unnecessary)
+    // save_map_data(&bitmap_map, solver_type, selected_map);
+    // std::cout << "Map data save operation completed." << std::endl;
     
     return bitmap_map;
 }
@@ -83,7 +82,7 @@ GlobalPlan perform_global_planning(const MapData& bitmap_map, const RunConfig& c
     
     std::cout << "Global path planned. m_map_info points: " << planned_points.size() << std::endl;
     std::cout << "Global path planned. m_map_info points: " << planned_points.size() << std::endl;
-    save_m_map_info(m_map_info, config.solver_type);
+    save_m_map_info(m_map_info, config.solver_type, config.selected_map);
     
     return global_plan;
 }
@@ -137,7 +136,7 @@ int main(int argc, char** argv){
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif
-    std::cout << "=== CILQR Program Starting ===" << std::endl;
+    std::cout << "=== Program Starting ===" << std::endl;
     std::cout << "Initializing variables..." << std::endl;
     
     // 0. Load Configuration
@@ -156,7 +155,6 @@ int main(int argc, char** argv){
     std::cout << "Start: (" << run_config.start_x << ", " << run_config.start_y << ", " << run_config.start_theta << ") | "
               << "Goal: (" << run_config.goal_x << ", " << run_config.goal_y << ", " << run_config.goal_theta << ")" << std::endl;
 
-    // 2. Load Map
     // 2. Load Map
     MapData bitmap_map = load_and_process_map(run_config.selected_map, run_config.solver_type);
     
@@ -188,7 +186,7 @@ int main(int argc, char** argv){
     ObstacleData obs_data = initialize_obstacles(global_plan, bitmap_map, arg, run_config);
 
     // 7. Initialize Solvers
-    CILQRSolver cilqr_solver(ego, obs_data.trajectories, arg, "cilqr");
+    CILQRSolver cilqr_solver(ego, obs_data.trajectories, arg, run_config.selected_map, "cilqr");
     ALILQRSolver alilqr_solver(ego, obs_data.trajectories, arg);
     Solution solution;
     Control cur_ctrl;
@@ -211,7 +209,8 @@ int main(int argc, char** argv){
         }
         clock_t end = clock();
         double cpu_time_used = static_cast<double>(end - start) / CLOCKS_PER_SEC;
-        std::cout << "CPU time used: " << cpu_time_used * 1000 << " ms\n";
+        solution.solve_time_ms = cpu_time_used * 1000;
+        std::cout << "CPU time used: " << solution.solve_time_ms << " ms\n";
         
         // Validation
         ego.set_state(cur_state);
@@ -232,7 +231,7 @@ int main(int argc, char** argv){
         update_obstacle_states(obs_data, arg);
 
         // Visualization
-        dynamic_plot(global_plan_log, ego_log, obs_data.trajectories, solution, &bitmap_map, global_plan, ego.get_model(), arg, run_config.solver_type);
+        dynamic_plot(global_plan_log, ego_log, obs_data.trajectories, solution, &bitmap_map, global_plan, ego.get_model(), arg, run_config.solver_type, run_config.selected_map);
     }
 
     return 0;

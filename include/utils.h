@@ -65,16 +65,17 @@ void dynamic_plot(const std::vector<std::vector<double>>& global_plan_log,
     const GlobalPlan& global_plan,
     const SystemModel& vehicle_model,
     const Arg& arg,
-    const std::string& solver_type);
+    const std::string& solver_type,
+    const std::string& map_name);
 
 // Debug-only: draw bitmap map alone to verify matplotlib-cpp rendering; if output_path is non-empty, save to that file
 void draw_bitmap_debug(const MapData& map_data, const std::string& output_path = "");
 
 // 保存地图数据到单独的文件
-void save_map_data(const MapData* map_data, const std::string& solver_type);
+void save_map_data(const MapData* map_data, const std::string& solver_type, const std::string& map_name);
 std::string resolve_resource_path(const std::string& relative_path);
 // 新增：导出 m_map_info 到 outputs/data/m_map_info.json
-void save_m_map_info(const std::vector<std::vector<double>>& m_map_info, const std::string& solver_type);
+void save_m_map_info(const std::vector<std::vector<double>>& m_map_info, const std::string& solver_type, const std::string& map_name);
 void ensure_directory_exists(const std::string& path);
 // 地图和路径相关函数
 std::vector<std::vector<double>> load_map(double startx=0, double starty=0, double theta=0);

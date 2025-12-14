@@ -37,7 +37,7 @@
             "ITER": 200,
             "solver_type": "cilqr",
             "obstacle_speed": 0,
-            "obstacle_count": 4,
+            "obstacle_count": 0,
             "obstacle_distance": 3.5
         },
         "default": {

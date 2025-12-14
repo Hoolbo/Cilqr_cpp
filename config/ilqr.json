@@ -1,6 +1,6 @@
 {
     "cilqr": {
-        "N": 80,
+        "N": 50,
         "tol": 1.0,
         "rel_tol": 1e-5,
         "max_iter": 50,
@@ -16,7 +16,7 @@
         "ld_max": 20.0
     },
     "cost_weights": {
-        "desire_speed": 8.0,
+        "desire_speed": 15.0,
         "desire_heading": 0.0,
         "v_rate_weight": 5.0,
         "ref_weight": 8.0,
